@@ -1,6 +1,6 @@
 # The BrillianT Spectral fitting code
 
-The BrillianT Spectral (BTS) fitting code is a python module designed to be a fully-automated multiple-component fitter for optically-thin spectra. The code is open-source and can be downloaded here. We ask that if the code is used in a publication that the Clarke et al. 2018 paper, which shows the first use, a description and tests of the code, is cited.
+The BrillianT Spectral (BTS) fitting code is a python module designed to be a fully-automated multiple-component fitter for optically-thin spectra. The code is open-source and can be downloaded here. If the code is used in published work then please cite the Clarke et al. 2018 paper, which shows the first use of the code, as well as a description of the code's methodology and tests of the code's accuracy.
 
 ## Dependencies 
 
@@ -44,7 +44,7 @@ These guesses  (the number of components, their amplitudes, positions and widths
 
 where _n_ is a user defined multiple of the noise level, &sigma;<sub>noise</sub>, max(spectrum) is the maximum intensity of the spectrum,_v_<sub>min</sub> and _v_<sub>max</sub> are respectively the minimum and maximum velocity in the spectrum, and &delta;v is the spectral resolution. **curve_fit** returns the parameters of the best fit, and the estimated covariance matrix for these parameters. There are cases when **curve_fit** will not be able to converge on a best fit, either because the initial guesses for the fit parameters were poor, or the &chi;<sup>2</sup> landscape is complicated. In these cases the lack of convergence is noted and no fit is recorded; however, in real data the rate of no convergence is very low, << 1%. In the future, a Monte Carlo Markov Chain (MCMC) fitting routine will be added to fit those spectra which cannot be fitted using **curve_fit**. 
 
-Once a fit is found, the reduced &chi;<sup>2</sup> is calculated. The reduced &chi;<sup>2</sup> is compared to a user defined limit, &chi;<sup>2</sup><sub>limit</sub>. Those fits which return a value above this limit are refitted with an additional velocity component added. The initial guess for the new component's centroid is taken to be the velocity of the channel at which the absolute residual is largest. The initial guess for amplitude is then taken to be the intensity of the spectra at this location and the width guess is taken to be the velocity resolution. If the new fit lies below the &chi;<sup>2</sup> limit then the new set of fitting parameters is saved, if they do not then the fitting parameters for the old fit are recorded. To avoid over-fitting, those fits which have reduced &chi;<sup>2</sup> below the limit, &chi;<sup>2</sup><sub>limit</sub>, are re-fitted using one fewer velocity component. The removed velocity component is the one with the smallest amplitude. If the fit with fewer velocity components also has a reduced &chi;<sup>2</sup> below &chi;<sup>2</sup><sub>limit</sub>, then its fitting parameters are saved; if not, the old fit is saved. The default valueis &chi;<sup>2</sup><sub>limit</sub> = 1.5. 
+Once a fit is found, the reduced &chi;<sup>2</sup> is calculated. The reduced &chi;<sup>2</sup> is compared to a user defined limit, &chi;<sup>2</sup><sub>limit</sub>. Those fits which return a value above this limit are refitted with an additional velocity component added. The initial guess for the new component's centroid is taken to be the velocity of the channel at which the absolute residual is largest. The initial guess for amplitude is then taken to be the intensity of the spectra at this location and the width guess is taken to be the velocity resolution. If the new fit lies below the &chi;<sup>2</sup> limit then the new set of fitting parameters is saved, if they do not then the fitting parameters for the old fit are recorded. To avoid over-fitting, those fits which have reduced &chi;<sup>2</sup> below the limit, &chi;<sup>2</sup><sub>limit</sub>, are re-fitted using one fewer velocity component. The removed velocity component is the one with the smallest amplitude. If the fit with fewer velocity components also has a reduced &chi;<sup>2</sup> below &chi;<sup>2</sup><sub>limit</sub>, then its fitting parameters are saved; if not, the old fit is saved. The default value is &chi;<sup>2</sup><sub>limit</sub> = 1.5. 
 
 As well as checking for over-fitting, the code checks for over-lapping velocity components. Such components may appear in spectra for physical reasons (i.e. jets) and so this feature may be disabled. However, if over-lapping velocity components are not desired the code checks if any two of the returned velocity centroids lie within one velocity channel of each other. If there are such over-lapping components then the weaker of the two over-lapping components is removed and the fit repeated. 
 
@@ -55,7 +55,65 @@ Here we discuss the main functions which the user may call from the module.
 
 The module is contained and there are only 4 functions which the user will call:
 
-* **fit_single_line**,
-* **fit_a_fits**,
-* **single_gaussian_test**,
-* **multi_gaussian_test**.
+* **fit_single_line** - The function to fit a single spectrum. It takes 3 arguments: the velocity array, the intensity in these bins, and the parameters.
+* **fit_a_fits** - The function to fit an entire fits file. It takes only 1 argument, the parameters. For this function to be used the fits file must have a header which contains information about the velocity range of the spectrum.
+* **single_gaussian_test** - A test function which produces test spectra containing a single Gaussian component. This test is used to determine the error on the fitted parameters. It takes the parameter file as its only argument.
+* **multi_gaussian_test** - A test function which produces test spectra with up to 4 Gaussian components. This test is used to determine how well the code is at detecting the correct number of components. It takes the parameter file as its only argument.
+
+The user interacts with these routines using a parameter file which contains all important information. 
+
+### The parameter file
+
+There are 5 sets of parameters in the parameter file: the important three, noise level parameters, fits file parameters, test run parameters, and flags. The example parameter file shows the default values of the parameters and is well commented.
+
+#### The important three
+
+These are the three important parameters discussed in depth in the methodology section.
+
+* **chi_limit** - This is the reduced &chi;<sup>2</sup><sub>limit</sub> which is used to determine the goodness of the fit. 
+* **smoothing_length** - This is the smoothing length used to smooth the noisy spectrum before the determination of the nuber of peaks.
+* **signal_to_noise_ratio** - This is the signal to noise ratio used to determine if a component is significant enough to be fitted.
+
+#### Noise level parameters
+
+These are the parameters which tell the code the noise level of the spectra it is attempting to fit.
+
+* **lower_integrated_emission_limit** - This is the integrated emission limit which is used to determine if the emission in the spectrum is significant enough to attempt a fit. If the integrated emission of the spectrum is below this limit it is not fitted.
+* **variable_noise** - In observations the noise level may vary across the map and so an assumption of a constant r.m.s noise is not a good one. This is set to 1 if one wishes to have a noise which varies across the map, and set to 0 if a constant level is used.
+* **noise_level** - This is the r.m.s noise level that is used by the fitting routine for all spectra if variable_noise=0.
+* **noise_clip** - This is used to determine the noise in a spectrum if variable_noise=1. The standard deviation of the intensity for the first N velocity bins, where N is the value of noise_clip, is then used as the noise level for this spectrum.
+
+#### Fits file parameters
+
+If BTS is being used to fit an entire fits datacube at once then these paramters are used for input and output
+
+* **in_file_name** - This is the name and location of the fits file one wishes to fit. 
+* **out_file_base** - This is the name base for the output fits file, i.e. Amp_base.fits, Vel_base.fits
+
+#### Test run parameters
+
+These parameters are used when one uses one of the test functions.
+
+* **test_number** - The number of test spectra used.
+* **test_spec_min** - The minimum velocity of the spectra.
+* **test_spec_max** - The maxmimum velocity of the spectra.
+* **test_spec_num** - The number of velocity channels in the spectra. 
+* **test_noise** - TThe noise level added to the test spectra.
+* **test_amplitude_min** - The minimum amplitude of the components in the test spectra.
+* **test_amplitude_max** - The maximum amplitude of the components in the test spectra.
+* **test_width_min** - The minimum width of the components in the test spectra.
+* **test_width_max** - The maximum width of the components in the test spectra.
+* **test_vel_cen_min** - The minimum velocity centroid of the components in the test spectra.
+* **test_vel_cen_max** - The maximum velocity centroid of the components in the test spectra.
+* **test_plot_tag** - A flag to turn on plotting for the single_gaussian_test function.
+
+#### Flags
+
+These are two flags used in the code.
+
+* **debug** - A debug flag which turns on a lot of screen output. 
+* **check_overlap** - A flag to turn on the function to check if two components have velocity centroids within 1 velocity bin of each other. This is normally the case if the spectrum is overfitting and so should be set to 1. However, if one expects overlapping components, i.e. due to jets, this should be set to 0.
+
+
+
+
