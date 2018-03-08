@@ -943,7 +943,15 @@ def SingleGaussianTest(paramfile):
 
 	### Loop over the number of tests specified
 
+	print "#######################"
+	print "#### Test progress ####"
+	print "#######################"
+	print " "
+
 	for ii in range(0,num_test):
+
+		if((ii+1)%numpy.int(num_test/10.)==0):
+			print "The test is %.2f %% complete" %(100*(ii+1)/numpy.float(num_test))
 
 		### Pick a random amplitude, centroid and width
 		amp = numpy.random.rand(1)*(amp_max - amp_min) + amp_min
@@ -1003,6 +1011,9 @@ def SingleGaussianTest(paramfile):
 	c_e = 100*numpy.array(c_e)
 	w_e = 100*numpy.array(w_e)
 
+	print " "
+	print " "
+	print " "
 	print "##############################################"
 	print "#### Results for the single Gaussian test ####"
 	print "##############################################"
