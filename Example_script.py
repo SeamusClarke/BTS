@@ -5,11 +5,11 @@ import numpy as np
 
 ##### First run the single Gaussian test
 
-#BTS.single_gaussian_test("./Example_files/SingleGaussianTest.param")
+BTS.single_gaussian_test("./Example_files/SingleGaussianTest.param")
 
 ##### Next run the multiple Gaussian test
 
-#BTS.multi_gaussian_test("./Example_files/MultipleGaussianTest.param")
+BTS.multi_gaussian_test("./Example_files/MultipleGaussianTest.param")
 
 ##### Fit a single test spectrum
 
@@ -37,8 +37,8 @@ print "The output amplitude, centroid and width are: %.2f, %.2f, %.2f" %(co_eff[
 
 ##### Fit the test fits cube
 
-# This should produce 4 fits files with the ampltiudes, centroids, widths and reduced chi_squareds.
+# This should produce 4 fits files with the ampltiudes, centroids, widths and reduced chi_squareds. All spectra should have 1 component.
 
-#BTS.fit_a_fits("./Example_files/FitsFileFit.param")
+BTS.fit_a_fits("./Example_files/FitsFileFit.param")
 
 
