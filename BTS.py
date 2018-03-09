@@ -895,7 +895,7 @@ def fit_single_line(vel,x,params):
 
 ### The first is for the single Gaussian test, used to determine the average error on the fitting parameters
 
-def SingleGaussianTest(paramfile):
+def single_gaussian_test(paramfile):
 
 	param = ReadParameters(paramfile)
 
@@ -1048,7 +1048,7 @@ def SingleGaussianTest(paramfile):
 
 ### Here we now start the multiple component test. This is to test the code's ability to determine the number of components in test spectra.
 
-def MultiGaussianTest(paramfile):
+def multi_gaussian_test(paramfile):
 
 	param = ReadParameters(paramfile)
 
@@ -1360,7 +1360,7 @@ def ReadParameters(param_file):
 
 ##### Function which fits a whole fits cube if the fits cube has all the right information in the header
 
-def FitAFits(param_file):
+def fit_a_fits(param_file):
 
 	### Read the parameter file and get the input fits file name
 
