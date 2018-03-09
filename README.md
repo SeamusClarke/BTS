@@ -1,6 +1,6 @@
 # The BrillianT Spectral fitting code
 
-The BrillianT Spectral (BTS) fitting code is a python module designed to be a fully-automated multiple-component fitter for optically-thin spectra. The code is open-source and can be downloaded here. If the code is used in published work then please cite the Clarke et al. 2018 paper, which shows the first use of the code, as well as a description of the code's methodology and tests of the code's accuracy.
+The BrillianT Spectral (BTS) fitting code is a, rather cheekily names, python module designed to be a fully-automated multiple-component fitter for optically-thin spectra. The code is open-source and can be downloaded here. If the code is used in published work please cite the Clarke et al. 2018 paper, which shows the first use of the code, as well as a description of the code's methodology and tests of the code's accuracy.
 
 ## Dependencies 
 
@@ -53,14 +53,14 @@ As well as checking for over-fitting, the code checks for over-lapping velocity 
 
 Here we discuss the main functions which the user may call from the module. 
 
-The module is contained and there are only 4 functions which the user will call:
+There are only 4 functions which the user will call:
 
 * **fit_single_line** - The function to fit a single spectrum. It takes 3 arguments: the velocity array, the intensity in these bins, and the parameters.
 * **fit_a_fits** - The function to fit an entire fits file. It takes only 1 argument, the parameters. For this function to be used the fits file must have a header which contains information about the velocity range of the spectrum.
 * **single_gaussian_test** - A test function which produces test spectra containing a single Gaussian component. This test is used to determine the error on the fitted parameters. It takes the parameter file as its only argument.
 * **multi_gaussian_test** - A test function which produces test spectra with up to 4 Gaussian components. This test is used to determine how well the code is at detecting the correct number of components. It takes the parameter file as its only argument.
 
-The user interacts with these routines using a parameter file which contains all important information. 
+The user interacts with these routines using a parameter file which contains all important information. Included in the repository is an example script which shows how each of the 4 functions is used. 
 
 ### The parameter file
 
@@ -109,11 +109,16 @@ These parameters are used when one uses one of the test functions.
 
 #### Flags
 
-These are two flags used in the code.
+These are the two flags used in the code
 
 * **debug** - A debug flag which turns on a lot of screen output. 
 * **check_overlap** - A flag to turn on the function to check if two components have velocity centroids within 1 velocity bin of each other. This is normally the case if the spectrum is overfitting and so should be set to 1. However, if one expects overlapping components, i.e. due to jets, this should be set to 0.
 
+## Future work
 
+BTS is not a completely finished code and there are a number of features will be added in the future:
 
+* There are a small number of times in which the least-sqaured function **curve_fit** does not converge on an answer due to either poor guesses for the components, or a complex reduced &chi;<sup>2</sup> landscape. In the future a Monte Carlo Markov Chain (MCMC) module will be added to fit the spectra in those cases.
 
+## Acknowledgements 
+This code was produced with the support of the ERC starting grant No. 679852 "RADFEEDBACK"
