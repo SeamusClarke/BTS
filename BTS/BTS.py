@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import numpy
 import matplotlib.pyplot
 from scipy.optimize import curve_fit
