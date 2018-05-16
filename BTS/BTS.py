@@ -1,3 +1,5 @@
+from __future__ import print_function
+
 import numpy
 import matplotlib.pyplot
 from scipy.optimize import curve_fit
@@ -22,10 +24,10 @@ def fit_single_line(vel,x,params):
 	n = params["signal_to_noise_ratio"]
 
 	if(debug==1):
-		print "##########"
-		print "DEBUG MODE"
-		print "##########"
-		print " "
+		print("##########")
+		print("DEBUG MODE")
+		print("##########")
+		print(" ")
 
 	overlap=0
 
@@ -135,8 +137,8 @@ def fit_single_line(vel,x,params):
 			num=num+l
 			
 			if(debug==1):
-				print "start  = ", vel[start]
-				print "finish = ", vel[finish]
+				print("start  = ", vel[start])
+				print("finish = ", vel[finish])
 
 			start=-1
 			finish=-1
@@ -150,19 +152,19 @@ def fit_single_line(vel,x,params):
 
 	if(debug==1):
 	
-		print "######## Guess values #########"
-		print "Number of peaks = ", n_peaks
-		print "Peak ids = ", pid
-		print "Peak centroids = ", pcent
-		print "Peak amplitude = ", pamp
-		print "Peak width = ", psig
-		print " "
+		print("######## Guess values #########")
+		print("Number of peaks = ", n_peaks)
+		print("Peak ids = ", pid)
+		print("Peak centroids = ", pcent)
+		print("Peak amplitude = ", pamp)
+		print("Peak width = ", psig)
+		print(" ")
 
 	### if more than 6 components were detected then lets try fitting with 6
 
 	if(n_peaks>6):
 
-		print "More than 6 peaks were detected. We will try to fit with just 6"
+		print("More than 6 peaks were detected. We will try to fit with just 6")
 		pamp=pamp[:6]
 		psig=psig[:6]
 		pcent = pcent[:6]
@@ -172,9 +174,9 @@ def fit_single_line(vel,x,params):
 		if(debug==1):
 			matplotlib.pyplot.plot(vel,spec)
 			matplotlib.pyplot.show()
-			print pamp
-			print psig
-			print pcent
+			print(pamp)
+			print(psig)
+			print(pcent)
 
 	guess = numpy.zeros(3*n_peaks)
 	bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
@@ -335,13 +337,13 @@ def fit_single_line(vel,x,params):
 
 		
 		if(debug==1):
-			print "########## First fit ###########"
-			print "Number of peaks = ", n_peaks
-			print "Reduced chi_sq = ", r_chi_sq
-			print "Residuals = ", res
-			print "Co-effs = ", co_eff
-			print "Converged = ", converged
-			print " "
+			print("########## First fit ###########")
+			print("Number of peaks = ", n_peaks)
+			print("Reduced chi_sq = ", r_chi_sq)
+			print("Residuals = ", res)
+			print("Co-effs = ", co_eff)
+			print("Converged = ", converged)
+			print(" ")
 			
 
 	### If two peaks were fitted we fit with 2 and also 1 peak. Then we compare the reduced chi_sq to the chi_sq limit from the parameters. If the 1 peak fit is sufficiently good, we keep it.
@@ -352,21 +354,21 @@ def fit_single_line(vel,x,params):
 		r_chi_sq2, res2, co_eff2, var_matrix2, converged2 = fit1(vel,spec,guess3,bound3,noise)
 
 		if(debug==1):
-			print "########## First fit ###########"
-			print "Number of peaks = ", n_peaks
-			print " "
-			print "For the 2 peak fit"
-			print "Reduced chi_sq = ", r_chi_sq
-			print "Residuals = ", res
-			print "Co-effs = ", co_eff
-			print "Converged = ", converged
-			print " "
-			print "For the 1 peak fit"
-			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
-			print "Co-effs = ", co_eff2
-			print "Converged = ", converged2
-			print " "
+			print("########## First fit ###########")
+			print("Number of peaks = ", n_peaks)
+			print(" ")
+			print("For the 2 peak fit")
+			print("Reduced chi_sq = ", r_chi_sq)
+			print("Residuals = ", res)
+			print("Co-effs = ", co_eff)
+			print("Converged = ", converged)
+			print(" ")
+			print("For the 1 peak fit")
+			print("Reduced chi_sq = ", r_chi_sq2)
+			print("Residuals = ", res2)
+			print("Co-effs = ", co_eff2)
+			print("Converged = ", converged2)
+			print(" ")
 
 		if(r_chi_sq2<chi_limit and converged2==1):
 
@@ -388,9 +390,9 @@ def fit_single_line(vel,x,params):
 			converged = converged2
 
 		if(debug==1):
-			print "####### After check ########"
-			print "Number of peaks = ", n_peaks
-			print " "
+			print("####### After check ########")
+			print("Number of peaks = ", n_peaks)
+			print(" ")
 
 
 	### If 3 peaks detected we try fitting with 3, 2 and 1 peaks. 
@@ -404,27 +406,27 @@ def fit_single_line(vel,x,params):
 
 
 		if(debug==1):
-			print "########## First fit ###########"
-			print "Number of peaks = ", n_peaks
-			print " "
-			print "For the 3 peak fit"
-			print "Reduced chi_sq = ", r_chi_sq
-			print "Residuals = ", res
-			print "Co-effs = ", co_eff
-			print "Converged = ", converged
-			print " "
-			print "For the 2 peak fit"
-			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
-			print "Co-effs = ", co_eff2
-			print "Converged = ", converged2
-			print " "
-			print "For the 1 peak fit"
-			print "Reduced chi_sq = ", r_chi_sq3
-			print "Residuals = ", res3
-			print "Co-effs = ", co_eff3
-			print "Converged = ", converged3
-			print " "
+			print("########## First fit ###########")
+			print("Number of peaks = ", n_peaks)
+			print(" ")
+			print("For the 3 peak fit")
+			print("Reduced chi_sq = ", r_chi_sq)
+			print("Residuals = ", res)
+			print("Co-effs = ", co_eff)
+			print("Converged = ", converged)
+			print(" ")
+			print("For the 2 peak fit")
+			print("Reduced chi_sq = ", r_chi_sq2)
+			print("Residuals = ", res2)
+			print("Co-effs = ", co_eff2)
+			print("Converged = ", converged2)
+			print(" ")
+			print("For the 1 peak fit")
+			print("Reduced chi_sq = ", r_chi_sq3)
+			print("Residuals = ", res3)
+			print("Co-effs = ", co_eff3)
+			print("Converged = ", converged3)
+			print(" ")
 
 		if(r_chi_sq3<chi_limit and converged3==1):
 
@@ -741,7 +743,7 @@ def fit_single_line(vel,x,params):
 	### If no fit converged then we exit
 	if(converged==0):
 
-		print "No convergence"
+		print("No convergence")
 		return [[0,0,0],[0]]
 
 	### check for an overlap if this option is switched on 
@@ -749,9 +751,9 @@ def fit_single_line(vel,x,params):
 		overlap = check_overlap(co_eff,dv)
 
 		if(debug==1):
-			print "##### Check overlap #####"
-			print "Overlap = ", overlap
-			print " "
+			print("##### Check overlap #####")
+			print("Overlap = ", overlap)
+			print(" ")
 		
 
 	### if we have an overlap then we need to drop a peak and fit with one fewer
@@ -787,18 +789,18 @@ def fit_single_line(vel,x,params):
 			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit5(vel,spec,guess2,bound2,noise)
 
 		if(debug==1):
-			print "##### After overlap reduction #####"
-			print "Number of peaks = ", n_peaks - 1
-			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
-			print "Co-effs = ", co_eff2
-			print "Converged = ", converged
-			print " "
+			print("##### After overlap reduction #####")
+			print("Number of peaks = ", n_peaks - 1)
+			print("Reduced chi_sq = ", r_chi_sq2)
+			print("Residuals = ", res2)
+			print("Co-effs = ", co_eff2)
+			print("Converged = ", converged)
+			print(" ")
 
 		#### check convergence, if no convergence we do not output the old fit as it still contains overlapping components.
 		if(converged==0):
 
-			print "No convergence"
+			print("No convergence")
 			return [[0,0,0],[0]]
 
 		### if converged return the new fit
@@ -847,13 +849,13 @@ def fit_single_line(vel,x,params):
 
 		if(debug==1):
 
-			print "##### Poor fit so we add one #####"
-			print "Fitted with ", n_peaks + 1, " peaks"
-			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
-			print "Co-effs = ", co_eff2
-			print "Converged = ", converged
-			print " "
+			print("##### Poor fit so we add one #####")
+			print("Fitted with ", n_peaks + 1, " peaks")
+			print("Reduced chi_sq = ", r_chi_sq2)
+			print("Residuals = ", res2)
+			print("Co-effs = ", co_eff2)
+			print("Converged = ", converged)
+			print(" ")
 			
 
 		#Check if the fit converged we return the old bad fit.
@@ -943,15 +945,15 @@ def single_gaussian_test(paramfile):
 
 	### Loop over the number of tests specified
 
-	print "#######################"
-	print "#### Test progress ####"
-	print "#######################"
-	print " "
+	print("#######################")
+	print("#### Test progress ####")
+	print("#######################")
+	print(" ")
 
 	for ii in range(0,num_test):
 
 		if((ii+1)%numpy.int(num_test/10.)==0):
-			print "The test is %.2f %% complete" %(100*(ii+1)/numpy.float(num_test))
+			print("The test is %.2f %% complete" %(100*(ii+1)/numpy.float(num_test)))
 
 		### Pick a random amplitude, centroid and width
 		amp = numpy.random.rand(1)*(amp_max - amp_min) + amp_min
@@ -973,8 +975,8 @@ def single_gaussian_test(paramfile):
 		### Check that a fit was found
 		if(co[0]==0 or co[0]<0):
 			n = n + 1
-			print "No line was detected"
-			print "The amplitude, centroid and width was: ", amp, cen, width	
+			print("No line was detected")
+			print("The amplitude, centroid and width was: ", amp, cen, width)	
 
 		### If there was a fit, check for the number of components found
 		else:
@@ -1001,9 +1003,9 @@ def single_gaussian_test(paramfile):
 			### More than one component was detected.
 			else:
 				n2 = n2 + 1
-				print "More than one component was detected"
-				print "The input components were: ", amp, cen, width
-				print "The output amplitudes, centroids and widths were: ", co[0::3], co[1::3], co[2::3]
+				print("More than one component was detected")
+				print("The input components were: ", amp, cen, width)
+				print("The output amplitudes, centroids and widths were: ", co[0::3], co[1::3], co[2::3])
 
 
 	### Print out the median errors and the interquartile range
@@ -1011,20 +1013,20 @@ def single_gaussian_test(paramfile):
 	c_e = 100*numpy.array(c_e)
 	w_e = 100*numpy.array(w_e)
 
-	print " "
-	print " "
-	print " "
-	print "##############################################"
-	print "#### Results for the single Gaussian test ####"
-	print "##############################################"
+	print(" ")
+	print(" ")
+	print(" ")
+	print("##############################################")
+	print("#### Results for the single Gaussian test ####")
+	print("##############################################")
 
-	print "Median error on amplitude as a percentage = %.2f + %.2f - %.2f" %(numpy.percentile(a_e, 50), (numpy.percentile(a_e,75)-numpy.percentile(a_e,50)), (numpy.percentile(a_e,50)-numpy.percentile(a_e,25)))
-	print "Median error on centroids as a percentage = %.2f + %.2f - %.2f" %(numpy.percentile(c_e, 50), (numpy.percentile(c_e,75)-numpy.percentile(c_e,50)), (numpy.percentile(c_e,50)-numpy.percentile(c_e,25)))
-	print "Median error on widths as a percentage    = %.2f + %.2f - %.2f" %(numpy.percentile(w_e, 50), (numpy.percentile(w_e,75)-numpy.percentile(w_e,50)) , (numpy.percentile(w_e,50)-numpy.percentile(w_e,25)))
+	print("Median error on amplitude as a percentage = %.2f + %.2f - %.2f" %(numpy.percentile(a_e, 50), (numpy.percentile(a_e,75)-numpy.percentile(a_e,50)), (numpy.percentile(a_e,50)-numpy.percentile(a_e,25))))
+	print("Median error on centroids as a percentage = %.2f + %.2f - %.2f" %(numpy.percentile(c_e, 50), (numpy.percentile(c_e,75)-numpy.percentile(c_e,50)), (numpy.percentile(c_e,50)-numpy.percentile(c_e,25))))
+	print("Median error on widths as a percentage    = %.2f + %.2f - %.2f" %(numpy.percentile(w_e, 50), (numpy.percentile(w_e,75)-numpy.percentile(w_e,50)) , (numpy.percentile(w_e,50)-numpy.percentile(w_e,25))))
 
 	### Also show the reduced chi_squared for these fits
 	c_chi = numpy.array(c_chi)
-	print "Median reduced chi_squared                = %.2f + %.2f - %.2f" %(numpy.percentile(c_chi, 50), (numpy.percentile(c_chi,75)-numpy.percentile(c_chi,50)) , (numpy.percentile(c_chi,50)-numpy.percentile(c_chi,25)))
+	print("Median reduced chi_squared                = %.2f + %.2f - %.2f" %(numpy.percentile(c_chi, 50), (numpy.percentile(c_chi,75)-numpy.percentile(c_chi,50)) , (numpy.percentile(c_chi,50)-numpy.percentile(c_chi,25))))
 
 
 	if(plot_tag==1):
@@ -1089,15 +1091,15 @@ def multi_gaussian_test(paramfile):
 
 	count = 0
 
-	print "#######################"
-	print "#### Test progress ####"
-	print "#######################"
-	print " "
+	print("#######################")
+	print("#### Test progress ####")
+	print("#######################")
+	print(" ")
 
 	for ii in range(0,num_test):
 
 		if((ii+1)%numpy.int(num_test/10.)==0):
-			print "The test is %.2f %% complete" %(100*(ii+1)/numpy.float(num_test))
+			print("The test is %.2f %% complete" %(100*(ii+1)/numpy.float(num_test)))
 
 		### determine the number of peaks, between 1 and 4
 		npeak = numpy.random.rand(1)*4 + 1
@@ -1175,8 +1177,8 @@ def multi_gaussian_test(paramfile):
 		### Check that a fit was found
 		if(co[0]==0 or co[0]<0):
 			nf[ii] = 0
-			print "No components detected"
-			print "The amplitude, centroid and width were: ", amp, cen, width
+			print("No components detected")
+			print("The amplitude, centroid and width were: ", amp, cen, width)
 			
 
 		### If a fit was found then determine the number of components and find it.
@@ -1198,15 +1200,15 @@ def multi_gaussian_test(paramfile):
 		if(ni[ii]!=nf[ii]):
 			count = count+1
 
-	print " "
-	print " "
-	print " "
-	print "################################################"
-	print "#### Results for the multiple Gaussian test ####"
-	print "################################################"
+	print(" ")
+	print(" ")
+	print(" ")
+	print("################################################")
+	print("#### Results for the multiple Gaussian test ####")
+	print("################################################")
 
-	print "%d test spectra were fitted with the wrong number of components out of %d tests" %(count,len(ni[ni>0]))
-	print "Thus the code has a %.2f %% success rate for these parameters" %(100*(1-count/numpy.float(len(ni[ni>0]))))
+	print("%d test spectra were fitted with the wrong number of components out of %d tests" %(count,len(ni[ni>0])))
+	print("Thus the code has a %.2f %% success rate for these parameters" %(100*(1-count/numpy.float(len(ni[ni>0])))))
 
 	return
 
@@ -1293,62 +1295,62 @@ def ReadParameters(param_file):
 					param[words[0]]=numpy.float(words[2])
 				else:
 
-					print "The variable is neither a string, float or integer. I don't know how to deal with this"
+					print("The variable is neither a string, float or integer. I don't know how to deal with this")
 
 			except KeyError:
 
-				print "There is no such parameter. Add it to the type_of_var and param dictionaries"
+				print("There is no such parameter. Add it to the type_of_var and param dictionaries")
 
 
 		f.close()
 
 	### Print the parameters to screen
 
-	print " "
-	print " "
-	print " "
-	print "############################################"
-	print "################ Parameters ################"
-	print "############################################"
-	print ""
-	print "############# Important three ##############"
-	print "Smoothing length                = ", param["smoothing_length"]
-	print "Reduced Chi_sqaure limit        = ", param["chi_limit"]
-	print "Signal to noise ratio           = ", param["signal_to_noise_ratio"]
-	print " "
+	print(" ")
+	print(" ")
+	print(" ")
+	print("############################################")
+	print("################ Parameters ################")
+	print("############################################")
+	print("")
+	print("############# Important three ##############")
+	print("Smoothing length                = ", param["smoothing_length"])
+	print("Reduced Chi_sqaure limit        = ", param["chi_limit"])
+	print("Signal to noise ratio           = ", param["signal_to_noise_ratio"])
+	print(" ")
 
-	print "######## Non-test noise parameters #########"
-	print "Variable noise                  = ", param["variable_noise"]
+	print("######## Non-test noise parameters #########")
+	print("Variable noise                  = ", param["variable_noise"])
 	if(param["variable_noise"]==0):
-		print "Constant noise level            = ", param["noise_level"]
+		print("Constant noise level            = ", param["noise_level"])
 	elif(param["variable_noise"]==1): 
-		print "Number of bins used for noise   = ", param["noise_clip"]
-	print "Integrated emission lower limit = ", param["lower_integrated_emission_limit"]
-	print " "
+		print("Number of bins used for noise   = ", param["noise_clip"])
+	print("Integrated emission lower limit = ", param["lower_integrated_emission_limit"])
+	print(" ")
 
-	print "################## Flags ###################"
-	print "Check overlap                   = ", param["check_overlap"]
-	print "Debug switch                    = ", param["debug"]
-	print " "
+	print("################## Flags ###################")
+	print("Check overlap                   = ", param["check_overlap"])
+	print("Debug switch                    = ", param["debug"])
+	print(" ")
 
-	print "############# Fits file fitting ############"
-	print "Input Fits file name            = ", param["in_file_name"]
-	print "Output name base                = ", param["out_file_base"]
-	print " "
+	print("############# Fits file fitting ############")
+	print("Input Fits file name            = ", param["in_file_name"])
+	print("Output name base                = ", param["out_file_base"])
+	print(" ")
 
-	print "######### Parameters for test runs #########"
-	print "Number of test spectra          = ", param["test_number"]
-	print "Spectral range                  = [", param["test_spec_min"],",",param["test_spec_max"],"]"
-	print "Number of spectral bins         = ", param["test_spec_num"]
-	print "Test noise level                = ", param["test_noise"]
-	print "Amplitude range of components   = [", param["test_amplitude_min"],",",param["test_amplitude_max"],"]"
-	print "Velocity centroid range         = [", param["test_vel_cen_min"],",",param["test_vel_cen_max"],"]"
-	print "Width range of components       = [", param["test_width_min"],",",param["test_width_max"],"]"
-	print "Plotting switch                 = ", param["test_plot_tag"]
-	print " "
+	print("######### Parameters for test runs #########")
+	print("Number of test spectra          = ", param["test_number"])
+	print("Spectral range                  = [", param["test_spec_min"],",",param["test_spec_max"],"]")
+	print("Number of spectral bins         = ", param["test_spec_num"])
+	print("Test noise level                = ", param["test_noise"])
+	print("Amplitude range of components   = [", param["test_amplitude_min"],",",param["test_amplitude_max"],"]")
+	print("Velocity centroid range         = [", param["test_vel_cen_min"],",",param["test_vel_cen_max"],"]")
+	print("Width range of components       = [", param["test_width_min"],",",param["test_width_max"],"]")
+	print("Plotting switch                 = ", param["test_plot_tag"])
+	print(" ")
 
-	print " "
-	print " "
+	print(" ")
+	print(" ")
 
 	return param
 
@@ -1408,15 +1410,15 @@ def fit_a_fits(param_file):
 	no_con = 0
 
 
-	print "##########################"
-	print "#### Fitting progress ####"
-	print "##########################"
+	print("##########################")
+	print("#### Fitting progress ####")
+	print("##########################")
 
 	### Loop over the lines of sight in the datacube and try to fit each one
 
 	for ii in range(0,ny):
 		if((ii+1)%numpy.int(ny/10.)==0):
-			print "We are %.2f %% of the way through the cube" %(100*(ii+1)/numpy.float(ny))
+			print("We are %.2f %% of the way through the cube" %(100*(ii+1)/numpy.float(ny)))
 		for jj in range(0,nx):
 
 			### Take the spectrum from the line of sight
@@ -1464,21 +1466,21 @@ def fit_a_fits(param_file):
 
 	### Print out results
 
-	print " "
-	print " "
-	print " "
-	print "#########################"
-	print "###### Fit results ######"
-	print "#########################"
-	print "There are %d spectra with 1 component, %.2f %% of total fitted spectra" %(count[0], 100*numpy.float(count[0])/numpy.sum(count))
-	print "There are %d spectra with 2 component, %.2f %% of total fitted spectra" %(count[1], 100*numpy.float(count[1])/numpy.sum(count))
-	print "There are %d spectra with 3 component, %.2f %% of total fitted spectra" %(count[2], 100*numpy.float(count[2])/numpy.sum(count))
-	print "There are %d spectra with 4 component, %.2f %% of total fitted spectra" %(count[3], 100*numpy.float(count[3])/numpy.sum(count))
-	print "There are %d spectra with 5 component, %.2f %% of total fitted spectra" %(count[4], 100*numpy.float(count[4])/numpy.sum(count))
-	print "There are %d spectra with 6 component, %.2f %% of total fitted spectra" %(count[5], 100*numpy.float(count[5])/numpy.sum(count))
-	print " "
+	print(" ")
+	print(" ")
+	print(" ")
+	print("#########################")
+	print("###### Fit results ######")
+	print("#########################")
+	print("There are %d spectra with 1 component, %.2f %% of total fitted spectra" %(count[0], 100*numpy.float(count[0])/numpy.sum(count)))
+	print("There are %d spectra with 2 component, %.2f %% of total fitted spectra" %(count[1], 100*numpy.float(count[1])/numpy.sum(count)))
+	print("There are %d spectra with 3 component, %.2f %% of total fitted spectra" %(count[2], 100*numpy.float(count[2])/numpy.sum(count)))
+	print("There are %d spectra with 4 component, %.2f %% of total fitted spectra" %(count[3], 100*numpy.float(count[3])/numpy.sum(count)))
+	print("There are %d spectra with 5 component, %.2f %% of total fitted spectra" %(count[4], 100*numpy.float(count[4])/numpy.sum(count)))
+	print("There are %d spectra with 6 component, %.2f %% of total fitted spectra" %(count[5], 100*numpy.float(count[5])/numpy.sum(count)))
+	print(" ")
 	if(no_con>0):
-		print "There was no convergence for %d spectra" %no_con
+		print("There was no convergence for %d spectra" %no_con)
 
 
 	### Set up output. Copy the header from the input file and use that for the output files
