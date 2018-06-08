@@ -1389,6 +1389,16 @@ def fit_a_fits(param_file):
 	vel = numpy.zeros(nv)
 	for ii in range(0,nv):
 		vel[ii] = refv + (ii-refnv+1)*dv
+
+	neg_dv = 0
+
+	if(dv<0):
+
+		vel = numpy.flip(vel,axis=0)
+		ppv_data = numpy.flip(ppv_data,axis=0)
+		dv = numpy.fabs(dv)
+		neg_dv = 1
+
 	minv = vel[0]
 	maxv = vel[nv-1]
 
@@ -1486,6 +1496,12 @@ def fit_a_fits(param_file):
 	output_base = param["out_file_base"]
 	hdu = astropy.io.fits.PrimaryHDU()
 	hdu.header = spec_fits[0].header
+
+	if(neg_dv==1):
+		amp_out = numpy.flip(amp_out,axis=0)
+		cen_out = numpy.flip(cen_out,axis=0)
+		wid_out = numpy.flip(wid_out,axis=0)
+		chi_out = numpy.flip(chi_out,axis=0)
 
 	### Output amplitudes
 
