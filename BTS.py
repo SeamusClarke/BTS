@@ -40,6 +40,8 @@ def fit_single_line(vel,x,params):
 		noise = numpy.std(x[:noise_clip])
 	else:
 		noise = noise_level
+
+	print noise
 		
 	#### prepare the data and convolve spectrum with gaussian for peak determining.
 
@@ -134,9 +136,9 @@ def fit_single_line(vel,x,params):
 
 			num=num+l
 			
-			if(debug==1):
-				print "start  = ", vel[start]
-				print "finish = ", vel[finish]
+			#if(debug==1):
+				#print "start  = ", vel[start]
+				#print "finish = ", vel[finish]
 
 			start=-1
 			finish=-1
@@ -186,7 +188,7 @@ def fit_single_line(vel,x,params):
 	for ii in range(0,n_peaks):
 
 		if(pamp[ii]<n*noise):
-			pamp[ii]=n*noise+0.01
+			pamp[ii]=n*noise*1.01
 		if(pcent[ii]>maxv):
 			pcent[ii]=maxv-dv
 		if(pcent[ii]<minv):
@@ -194,13 +196,13 @@ def fit_single_line(vel,x,params):
 		if(psig[ii]>maxv-minv):
 			psig[ii] = 0.99*(maxv-minv)
 		if(psig[ii]<dv):
-			psig[ii]=dv+0.01
+			psig[ii]=dv*1.01
 
 		guess[3*ii] = pamp[ii]
 		guess[3*ii+1] = pcent[ii]
 		guess[3*ii+2] = psig[ii]
 
-		bound[0][3*ii] = n*noise
+		bound[0][3*ii] = 0.5*n*noise
 		bound[1][3*ii] = 2*max(spec)
 		bound[0][3*ii+1] = minv
 		bound[1][3*ii+1] = maxv
@@ -215,7 +217,7 @@ def fit_single_line(vel,x,params):
 
 		for ii in range(0,n_peaks-1):
 
-			bound3[0][3*ii] = n*noise
+			bound3[0][3*ii] = 0.5*n*noise
 			bound3[1][3*ii] = 2*max(spec)
 			bound3[0][3*ii+1] = minv
 			bound3[1][3*ii+1] = maxv
@@ -238,7 +240,7 @@ def fit_single_line(vel,x,params):
 
 		for ii in range(0,n_peaks-2):
 
-			bound4[0][3*ii] = n*noise
+			bound4[0][3*ii] = 0.5*n*noise
 			bound4[1][3*ii] = 2*max(spec)
 			bound4[0][3*ii+1] = minv
 			bound4[1][3*ii+1] = maxv
@@ -261,7 +263,7 @@ def fit_single_line(vel,x,params):
 
 		for ii in range(0,n_peaks-3):
 
-			bound5[0][3*ii] = n*noise
+			bound5[0][3*ii] = 0.5*n*noise
 			bound5[1][3*ii] = 2*max(spec)
 			bound5[0][3*ii+1] = minv
 			bound5[1][3*ii+1] = maxv
@@ -284,7 +286,7 @@ def fit_single_line(vel,x,params):
 
 		for ii in range(0,n_peaks-4):
 
-			bound6[0][3*ii] = n*noise
+			bound6[0][3*ii] = 0.5*n*noise
 			bound6[1][3*ii] = 2*max(spec)
 			bound6[0][3*ii+1] = minv
 			bound6[1][3*ii+1] = maxv
@@ -307,7 +309,7 @@ def fit_single_line(vel,x,params):
 
 		for ii in range(0,n_peaks-5):
 
-			bound7[0][3*ii] = n*noise
+			bound7[0][3*ii] = 0.5*n*noise
 			bound7[1][3*ii] = 2*max(spec)
 			bound7[0][3*ii+1] = minv
 			bound7[1][3*ii+1] = maxv
@@ -338,7 +340,7 @@ def fit_single_line(vel,x,params):
 			print "########## First fit ###########"
 			print "Number of peaks = ", n_peaks
 			print "Reduced chi_sq = ", r_chi_sq
-			print "Residuals = ", res
+			#print "Residuals = ", res
 			print "Co-effs = ", co_eff
 			print "Converged = ", converged
 			print " "
@@ -357,13 +359,13 @@ def fit_single_line(vel,x,params):
 			print " "
 			print "For the 2 peak fit"
 			print "Reduced chi_sq = ", r_chi_sq
-			print "Residuals = ", res
+			#print "Residuals = ", res
 			print "Co-effs = ", co_eff
 			print "Converged = ", converged
 			print " "
 			print "For the 1 peak fit"
 			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
+			#print "Residuals = ", res2
 			print "Co-effs = ", co_eff2
 			print "Converged = ", converged2
 			print " "
@@ -409,19 +411,19 @@ def fit_single_line(vel,x,params):
 			print " "
 			print "For the 3 peak fit"
 			print "Reduced chi_sq = ", r_chi_sq
-			print "Residuals = ", res
+			#print "Residuals = ", res
 			print "Co-effs = ", co_eff
 			print "Converged = ", converged
 			print " "
 			print "For the 2 peak fit"
 			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
+			#print "Residuals = ", res2
 			print "Co-effs = ", co_eff2
 			print "Converged = ", converged2
 			print " "
 			print "For the 1 peak fit"
 			print "Reduced chi_sq = ", r_chi_sq3
-			print "Residuals = ", res3
+			#print "Residuals = ", res3
 			print "Co-effs = ", co_eff3
 			print "Converged = ", converged3
 			print " "
@@ -761,7 +763,7 @@ def fit_single_line(vel,x,params):
 
 		for ii in range(0,n_peaks-1):
 
-			bound2[0][3*ii] = n*noise
+			bound2[0][3*ii] = 0.5*n*noise
 			bound2[1][3*ii] = 2*max(spec)
 			bound2[0][3*ii+1] = minv
 			bound2[1][3*ii+1] = maxv
@@ -790,7 +792,7 @@ def fit_single_line(vel,x,params):
 			print "##### After overlap reduction #####"
 			print "Number of peaks = ", n_peaks - 1
 			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
+			#print "Residuals = ", res2
 			print "Co-effs = ", co_eff2
 			print "Converged = ", converged
 			print " "
@@ -824,7 +826,7 @@ def fit_single_line(vel,x,params):
 
 		for ii in range(0,n_peaks+1):
 
-			bound2[0][3*ii] = n*noise
+			bound2[0][3*ii] = 0.5*n*noise
 			bound2[1][3*ii] = 2*max(spec)
 			bound2[0][3*ii+1] = minv
 			bound2[1][3*ii+1] = maxv
@@ -850,7 +852,7 @@ def fit_single_line(vel,x,params):
 			print "##### Poor fit so we add one #####"
 			print "Fitted with ", n_peaks + 1, " peaks"
 			print "Reduced chi_sq = ", r_chi_sq2
-			print "Residuals = ", res2
+			#print "Residuals = ", res2
 			print "Co-effs = ", co_eff2
 			print "Converged = ", converged
 			print " "
@@ -1598,9 +1600,75 @@ def check_overlap(co_eff,dv):
 
 
 
+#### Check for low amplitude but high integrated emission components
+
+def check_lowamp(vel,spec,params):
 
 
+	####### Unpack the parameter array
 
+	chi_limit = params["chi_limit"]
+	overlap_tag = params["check_overlap"]
+	debug = params["debug"]
+	lowerlimit = params["lower_integrated_emission_limit"]
+	smooth = params["smoothing_length"]
+	var_noise = params["variable_noise"]
+	noise_level = params["noise_level"]
+	noise_clip = params["noise_clip"]
+	n = params["signal_to_noise_ratio"]
+
+	####### Determine the noise level
+
+	if(var_noise == 1):
+		noise = numpy.std(x[:noise_clip])
+	else:
+		noise = noise_level
+
+	####### Determine the velocity resolution reduction
+
+	dv = vel[1]-vel[0]
+	spec2 = numpy.array(spec)
+	spec2 = numpy.sort(spec2)
+	peak_int = spec2[-5]
+	print peak_int
+
+	snr = peak_int / noise
+	print snr
+	ratio = n/snr
+	red = ratio**2
+	print red
+	red = numpy.ceil(red)
+	
+	print red
+
+	red = red+2
+
+	new_len = int(len(vel)/red)
+
+	new_spec = numpy.zeros(new_len)
+	
+	for ii in range(0,new_len-1):
+
+		for jj in range(0,int(red)):
+
+			new_spec[ii] = new_spec[ii] + (1./red)*spec[int(red)*ii + jj]
+
+	vel2 = numpy.linspace(vel[0],vel[int(red*new_len)-1],new_len)
+
+	matplotlib.pyplot.figure(1)
+	matplotlib.pyplot.plot(vel,spec)
+	matplotlib.pyplot.plot(vel2,new_spec)
+	matplotlib.pyplot.show() 
+
+	print (numpy.amax(new_spec)/noise)* numpy.sqrt(red)
+
+	params["noise_level"] = params["noise_level"] / numpy.sqrt(red)
+
+	x = fit_single_line(vel2,new_spec,params)
+
+	print x
+
+	return 
 
 ##### Wrappers for the fits for different number of peaks
 
