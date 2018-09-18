@@ -1,6 +1,6 @@
 # Behind The Spectrum fitting code
 
-The Behind The Spectrum (BTS) fitting code is a python module designed to be a fully-automated multiple-component fitter for optically-thin spectra. The code is open-source and can be downloaded here. If the code is used in published work please cite the Clarke et al. 2018, MNRAS, 479, 1722, which shows the first use of the code, as well as a description of the code's methodology and tests of the code's accuracy.
+The Behind The Spectrum (BTS) fitting code is a python module designed to be a fully-automated multiple-component fitter for optically-thin spectra. The code is open-source and can be downloaded here. If the code is used in published work please cite Clarke et al. 2018, MNRAS, 479, 1722, which shows the first use of the code, as well as a description of the code's methodology and tests of the code's accuracy.
 
 ## Dependencies 
 
