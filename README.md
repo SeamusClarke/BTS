@@ -120,7 +120,7 @@ BTS is not a completely finished code and there are a number of features will be
 
 * There are a small number of times in which the least-squared function **curve_fit** does not converge on an answer due to either poor guesses for the components, or a complex reduced &chi;<sup>2</sup> landscape. In the future a Monte Carlo Markov Chain (MCMC) module will be added to fit the spectra in those cases.
 
-* BTS is designed to only work for optically spectra as it assumes a Gaussian shape to the profile. An optically thick version is currently in development; this would allow one to know both the excitation temperature and the opacity of the line.
+* BTS is designed to only work for optically thin spectra as it assumes a Gaussian shape to the profile. An optically thick version is currently in development; this would allow one to know both the excitation temperature and the opacity of the line.
 
 * Currently when the code thinks that overfitting may have occured it removes the component with the lowest amplitude and re-fits with one fewer components. In the future a proximity criterion will also be added to help make this refitting more robust.
 
