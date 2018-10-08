@@ -42,7 +42,7 @@ These guesses  (the number of components, their amplitudes, positions and widths
 * _v_<sub>min</sub> < _v_<sub>cent</sub> < _v_<sub>max</sub>;
 * &delta;v < &sigma;<sub>width</sub> < _v_<sub>max</sub> - _v_<sub>min</sub>
 
-where _n_ is a user defined multiple of the noise level, &sigma;<sub>noise</sub>, max(spectrum) is the maximum intensity of the spectrum,_v_<sub>min</sub> and _v_<sub>max</sub> are respectively the minimum and maximum velocity in the spectrum, and &delta;v is the spectral resolution. **curve_fit** returns the parameters of the best fit, and the estimated covariance matrix for these parameters. There are cases when **curve_fit** will not be able to converge on a best fit, either because the initial guesses for the fit parameters were poor, or the &chi;<sup>2</sup> landscape is complicated. In these cases the lack of convergence is noted and no fit is recorded; however, in real data the rate of no convergence is very low, << 1%. In the future, a Monte Carlo Markov Chain (MCMC) fitting routine will be added to fit those spectra which cannot be fitted using **curve_fit**. 
+where _n_ is a user defined multiple of the noise level, &sigma;<sub>noise</sub>, max(spectrum) is the maximum intensity of the spectrum,_v_<sub>min</sub> and _v_<sub>max</sub> are respectively the minimum and maximum velocity in the spectrum, and &delta;v is the spectral resolution. **curve_fit** returns the parameters of the best fit, and the estimated co-variance matrix for these parameters. There are cases when **curve_fit** will not be able to converge on a best fit, either because the initial guesses for the fit parameters were poor, or the &chi;<sup>2</sup> landscape is complicated. In these cases the lack of convergence is noted and no fit is recorded; however, in real data the rate of no convergence is very low, << 1%. In the future, a Monte Carlo Markov Chain (MCMC) fitting routine will be added to fit those spectra which cannot be fitted using **curve_fit**. 
 
 Once a fit is found, the reduced &chi;<sup>2</sup> is calculated. The reduced &chi;<sup>2</sup> is compared to a user defined limit, &chi;<sup>2</sup><sub>limit</sub>. Those fits which return a value above this limit are refitted with an additional velocity component added. The initial guess for the new component's centroid is taken to be the velocity of the channel at which the absolute residual is largest. The initial guess for amplitude is then taken to be the intensity of the spectra at this location and the width guess is taken to be the velocity resolution. If the new fit lies below the &chi;<sup>2</sup> limit then the new set of fitting parameters is saved, if they do not then the fitting parameters for the old fit are recorded. To avoid over-fitting, those fits which have reduced &chi;<sup>2</sup> below the limit, &chi;<sup>2</sup><sub>limit</sub>, are re-fitted using one fewer velocity component. The removed velocity component is the one with the smallest amplitude. If the fit with fewer velocity components also has a reduced &chi;<sup>2</sup> below &chi;<sup>2</sup><sub>limit</sub>, then its fitting parameters are saved; if not, the old fit is saved. The default value is &chi;<sup>2</sup><sub>limit</sub> = 1.5. 
 
@@ -71,7 +71,7 @@ There are 5 sets of parameters in the parameter file: the important three, noise
 These are the three important parameters discussed in depth in the methodology section.
 
 * **chi_limit** - This is the reduced &chi;<sup>2</sup><sub>limit</sub> which is used to determine the goodness of the fit. 
-* **smoothing_length** - This is the smoothing length used to smooth the noisy spectrum before the determination of the nuber of peaks.
+* **smoothing_length** - This is the smoothing length used to smooth the noisy spectrum before the determination of the number of peaks.
 * **signal_to_noise_ratio** - This is the signal to noise ratio used to determine if a component is significant enough to be fitted.
 
 #### Noise level parameters
@@ -85,7 +85,7 @@ These are the parameters which tell the code the noise level of the spectra it i
 
 #### Fits file parameters
 
-If BTS is being used to fit an entire fits datacube at once then these paramters are used for input and output
+If BTS is being used to fit an entire fits datacube at once then these parameters are used for input and output
 
 * **in_file_name** - This is the name and location of the fits file one wishes to fit. 
 * **out_file_base** - This is the name base for the output fits file, i.e. Amp_base.fits, Vel_base.fits
@@ -96,7 +96,7 @@ These parameters are used when one uses one of the test functions.
 
 * **test_number** - The number of test spectra used.
 * **test_spec_min** - The minimum velocity of the spectra.
-* **test_spec_max** - The maxmimum velocity of the spectra.
+* **test_spec_max** - The maximum velocity of the spectra.
 * **test_spec_num** - The number of velocity channels in the spectra. 
 * **test_noise** - TThe noise level added to the test spectra.
 * **test_amplitude_min** - The minimum amplitude of the components in the test spectra.
@@ -118,11 +118,11 @@ These are the two flags used in the code
 
 BTS is not a completely finished code and there are a number of features will be added in the future:
 
-* There are a small number of times in which the least-sqaured function **curve_fit** does not converge on an answer due to either poor guesses for the components, or a complex reduced &chi;<sup>2</sup> landscape. In the future a Monte Carlo Markov Chain (MCMC) module will be added to fit the spectra in those cases.
+* There are a small number of times in which the least-squared function **curve_fit** does not converge on an answer due to either poor guesses for the components, or a complex reduced &chi;<sup>2</sup> landscape. In the future a Monte Carlo Markov Chain (MCMC) module will be added to fit the spectra in those cases.
 
-* BTS is designed to only work for optically spectra as it assumes a Gaussian shape to the profile. An optically thick version is currently in development; this would allow one to know both the excitation temperture and the opacity of the line.
+* BTS is designed to only work for optically thin spectra as it assumes a Gaussian shape to the profile. An optically thick version is currently in development; this would allow one to know both the excitation temperature and the opacity of the line.
 
-* Currently when the code thinks that overfitting may have occured it removes the component with the lowest amplitude and re-fits with one fewer components. In the future a proximty criterion will also be added to help make this refitting more robust.
+* Currently when the code thinks that overfitting may have occured it removes the component with the lowest amplitude and re-fits with one fewer components. In the future a proximity criterion will also be added to help make this refitting more robust.
 
 ## Acknowledgements 
 This code was produced with the support of the ERC starting grant No. 679852 "RADFEEDBACK"

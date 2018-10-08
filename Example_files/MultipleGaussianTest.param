@@ -1,6 +1,6 @@
 ### Important three parameters
 
-chi_limit                       :   1.5           ### The reduced chi_squared limit which is compared to to determine the goodness of fit.
+chi_limit                       :   1.2           ### The reduced chi_squared limit which is compared to to determine the goodness of fit.
 smoothing_length                :   3.0           ### The smoothing length used to smooth the spectrum before the determination of the number of peaks
 signal_to_noise_ratio           :   5             ### Signal to noise ratio to determine if a component is significant enough to fit
 
