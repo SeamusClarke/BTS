@@ -9,7 +9,7 @@ setuptools.setup(
     author="Seamus Clarke",
     description="Behind the Spectrum fitting code",
     url="https://github.com/SeamusClarke/BTS",
-    packages=['BTS'],
+    packages=setuptools.find_packages(),
     python_requires='>=2.7',
     install_requires=[
         'astropy',
