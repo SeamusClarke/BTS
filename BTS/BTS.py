@@ -22,10 +22,10 @@ def fit_single_line(vel,x,params):
 	n = params["signal_to_noise_ratio"]
 
 	if(debug==1):
-		print "##########"
-		print "DEBUG MODE"
-		print "##########"
-		print " "
+		print("##########")
+		print("DEBUG MODE")
+		print("##########")
+		print(" ")
 
 	overlap=0
 
@@ -135,8 +135,8 @@ def fit_single_line(vel,x,params):
 			num=num+l
 			
 			if(debug==1):
-				print "start  = ", vel[start]
-				print "finish = ", vel[finish]
+				print("start  = "), vel[start]
+				print("finish = "), vel[finish]
 
 			start=-1
 			finish=-1
@@ -150,13 +150,13 @@ def fit_single_line(vel,x,params):
 
 	if(debug==1):
 	
-		print "######## Guess values #########"
-		print "Number of peaks = ", n_peaks
-		print "Peak ids = ", pid
-		print "Peak centroids = ", pcent
-		print "Peak amplitude = ", pamp
-		print "Peak width = ", psig
-		print " "
+		print("######## Guess values #########")
+		print("Number of peaks = "), n_peaks
+		print("Peak ids = "), pid
+		print("Peak centroids = "), pcent
+		print("Peak amplitude = "), pamp
+		print("Peak width = "), psig
+		print(" ")
 
 	### if more than 6 components were detected then lets try fitting with 6
 

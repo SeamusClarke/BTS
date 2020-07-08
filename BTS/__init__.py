@@ -1,1 +1,1 @@
-from .BTS import BTS
+import BTS
