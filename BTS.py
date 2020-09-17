@@ -186,7 +186,7 @@ def fit_single_line(vel,x,params):
 	for ii in range(0,n_peaks):
 
 		if(pamp[ii]<n*noise):
-			pamp[ii]=n*noise+0.01
+			pamp[ii]=1.01*n*noise
 		if(pcent[ii]>maxv):
 			pcent[ii]=maxv-dv
 		if(pcent[ii]<minv):
@@ -194,7 +194,7 @@ def fit_single_line(vel,x,params):
 		if(psig[ii]>maxv-minv):
 			psig[ii] = 0.99*(maxv-minv)
 		if(psig[ii]<dv):
-			psig[ii]=dv+0.01
+			psig[ii]=dv*1.01
 
 		guess[3*ii] = pamp[ii]
 		guess[3*ii+1] = pcent[ii]
