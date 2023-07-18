@@ -1,25 +1,32 @@
 import numpy
 import matplotlib.pyplot
 from scipy.optimize import curve_fit
-from astropy.convolution import convolve, Gaussian1DKernel
+from astropy.convolution import convolve, Gaussian1DKernel, convolve_fft
 import astropy.io.fits
 import os
 
 ############ Fitting routine itself
 
-def fit_single_line(vel,x,params):
+def fit_single_line(vel,x,mask,params):
 
 	####### Unpack the parameter array
-
-	chi_limit = params["chi_limit"]
-	overlap_tag = params["check_overlap"]
 	debug = params["debug"]
-	lowerlimit = params["lower_integrated_emission_limit"]
 	smooth = params["smoothing_length"]
 	var_noise = params["variable_noise"]
 	noise_level = params["noise_level"]
-	noise_clip = params["noise_clip"]
 	n = params["signal_to_noise_ratio"]
+	max_peaks = params["max_peaks"]
+	max_it = params["max_iterations"]
+	daic = params["delta_AIC_limit"]
+	min_num_channels = params["min_velocity_channels"]
+	min_vw = params["min_width_value"]
+	max_vw = params["max_width_value"]
+	mask_pad = params["mask_pad"]
+
+	### If the spectrum mask shows fewer than the minimum number of velocity channels of emission then skip spectrum fitting
+	if(sum(mask)<min_num_channels):
+		return [[-2,0,0],[0,0,0],1e9]
+
 
 	if(debug==1):
 		print( "##########")
@@ -27,37 +34,31 @@ def fit_single_line(vel,x,params):
 		print( "##########")
 		print( " ")
 
-	overlap=0
-
+	### Get info about velocity
 	nv = len(x)
 	maxv=max(vel)
 	minv=min(vel)
-	dv = vel[1] - vel[0]
+	dv = numpy.fabs(vel[1] - vel[0])
 
 	####### Determine the noise level
-
 	if(var_noise == 1):
-		noise = numpy.std(x[:noise_clip])
+		noise = numpy.std(x[mask==0])
 	else:
 		noise = noise_level
 		
-	#### prepare the data and convolve spectrum with gaussian for peak determining.
 
+	### Pad the mask so that a some noise channels on either side of the emission channels are still included in all the calculations
+	mask = pad_mask(mask,mask_pad)
+
+	#### prepare the data and convolve spectrum with Gaussian for peak determination.
 	spec = x[:]
 	gk = Gaussian1DKernel(smooth)
-			
-	spec3 = convolve(spec,gk)
-
-	### if the integrated intensity of the line of sight is smaller than a given limit we skip
-
-	if(sum(spec)*dv < lowerlimit):
-		return [[-1,0,0],[0]]
+	smo_spec = convolve(spec,gk)
 
 	### Work out the gradients of the spectrum
-
 	dspec = numpy.zeros_like(spec)
 	for ii in range(0,nv-1):
-		dspec[ii] = (spec3[ii+1]-spec3[ii])/dv
+		dspec[ii] = (smo_spec[ii+1]-smo_spec[ii])/dv
 
 	ddspec = numpy.zeros_like(spec)
 	for ii in range(0,nv-2):
@@ -77,832 +78,585 @@ def fit_single_line(vel,x,params):
 
 			if(ddspec[ii+1] < ddspec[ii] and ddspec[ii+2] < ddspec[ii]):
 				decrease = 1
-			if(ddspec[ii+1] > ddspec[ii] and ddspec[ii+2] > ddspec[ii] and dddspec[ii]>0.0):
-				if(decrease==1 and (spec[ii]>n*noise or spec[ii+1] > n*noise or spec[ii-1] > n*noise )):	
+			if(ddspec[ii+1] > ddspec[ii] and ddspec[ii+2] > ddspec[ii] and dddspec[ii]>0):
+				if(decrease==1 and (mask[ii]==1 or mask[ii+1]==1 or mask[ii-1]==1) and (spec[ii]> n*noise or spec[ii+1]> n*noise or spec[ii-1]> n*noise) ):	
 					switch[ii] = 1
 				decrease = 0
 
-	index = numpy.linspace(0,nv-1,nv)
-	index = numpy.array(index,dtype=numpy.int)
-
-
-	### if there are no peaks then skip pixel
-
+	### if there seems to be no peaks, something went wrong so just make a guess of a single component
 	if(sum(switch)<1):
-		return [[-1,0,0],[0]]
+		guess = single_gauss_guess(vel,spec,mask)
+		### Maybe a bad pixel/too few emission channels even after padding so return non-convergence tag
+		if(numpy.isnan(guess[2])):
+			return [[-3,0,0],[0,0,0],1e9]
+		### If guess is ok then proceed
+		n_peaks = 1
+		pid=1
+		bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
+		bound[0][0] = n*noise
+		bound[1][0] = 2*max(spec) + n*noise
+		bound[0][1] = minv
+		bound[1][1] = maxv
+		bound[0][2] = min_vw
+		bound[1][2] = max_vw
 
-	### here we set up the arrays that contain the guesses for the peaks' amplitudes and centriods and widths
+		if(guess[0]<n*noise):
+			guess[0]=1.01*n*noise
+		if(guess[1]>maxv):
+			guess[1]=maxv-dv
+		if(guess[1]<minv):
+			guess[1]=minv+dv
+		if(guess[2]>max_vw):
+			guess[2] = 0.99*max_vw
+		if(guess[2]<min_vw):
+			guess[2]=1.01*min_vw
 
-	pid = index[switch==1] + 1
-	pcent = vel[pid]
-	pamp = spec[pid]
 
-	pcent = numpy.array(pcent,dtype=numpy.double)
-	pamp = numpy.array(pamp,dtype=numpy.double)
+	else:
+		### here we set up the arrays that contain the guesses for the peaks' amplitudes and centriods and widths
+		index = numpy.linspace(0,nv-1,nv)
+		index = numpy.array(index,dtype=numpy.int)
 
-	high = numpy.zeros_like(spec)
-	high = numpy.array(high,dtype=numpy.int)
+		pid = index[switch==1] + 1
+		pcent = vel[pid]
+		pamp = spec[pid]
 
-	high[spec>0.5*min(pamp)] = numpy.int(1)
+		pcent = numpy.array(pcent,dtype=numpy.double)
+		pamp = numpy.array(pamp,dtype=numpy.double)
 
-	start=-1
-	finish=-1
+		high = numpy.zeros_like(spec)
+		high = numpy.array(high,dtype=numpy.int)
 
-	psig = numpy.zeros(len(pid))
+		high[spec>0.5*min(pamp)] = numpy.int(1)
 
-	num=0
+		start=-1
+		finish=-1
 
-	### Go through and work out a guess for the widths
+		psig = numpy.zeros(len(pid))
 
-	for ii in range(0,nv-1):
+		num=0
 
-		if(ii==0 and high[0]==1):
-			start=ii
+		### Go through and work out a guess for the widths
 
-		if(high[ii+1] == 1 and high[ii] == 0 and start==-1 and finish==-1):
-			start=ii
+		for ii in range(0,nv-1):
 
-		if(high[ii+1] == 0 and high[ii] == 1 and start!=-1):
-			finish = ii
+			if(ii==0 and high[0]==1):
+				start=ii
 
-			ran = vel[finish] -vel[start]
+			if(high[ii+1] == 1 and high[ii] == 0 and start==-1 and finish==-1):
+				start=ii
 
-			l = len(pid[(pid<finish)*(pid>start)])
+			if(high[ii+1] == 0 and high[ii] == 1 and start!=-1):
+				finish = ii
 
-			for jj in range(num,num+l):
-				psig[jj] = ran/(l*numpy.sqrt(8*numpy.log(2)))
+				ran = numpy.fabs(vel[finish] -vel[start])
 
-			num=num+l
-			
+				l = len(pid[(pid<finish)*(pid>start)])
+
+				for jj in range(num,num+l):
+					psig[jj] = ran/(l*numpy.sqrt(8*numpy.log(2)))
+
+				num=num+l
+				
+				if(debug==1):
+					print( "start  = ", vel[start])
+					print( "finish = ", vel[finish])
+
+				start=-1
+				finish=-1
+
+
+		### if a guess width is smaller than the velocity resolution then we set it to the velocity resoution
+		psig[psig<min_vw] = 1.01 * min_vw
+
+		### If more peaks are guessed than maximum allowed peaks then keep on the highest amplitude peaks up to the max_peak number
+		n_peaks = len(pamp)
+		if(n_peaks>max_peaks):
 			if(debug==1):
-				print( "start  = ", vel[start])
-				print( "finish = ", vel[finish])
+				print("More than", max_peaks,"peaks were found")
+			dum = numpy.argsort(pamp)
+			pamp = pamp[dum[-max_peaks:]]
+			psig = psig[dum[-max_peaks:]]
+			pcent = pcent[dum[-max_peaks:]]
+			pid = pid[dum[-max_peaks:]]
+			n_peaks=max_peaks
 
-			start=-1
-			finish=-1
+		### set limits on the guess and fill the guess and boundary arrays
 
+		guess = numpy.zeros(3*n_peaks)
+		bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
+		guess = numpy.array(guess,dtype=numpy.double)
+			
+		for ii in range(0,n_peaks):
 
-	### if a guess width is smaller than the velocity resolution then we set it to the velocity resoution
+			if(pamp[ii]<n*noise):
+				pamp[ii]=1.01*n*noise
+			if(pcent[ii]>maxv):
+				pcent[ii]=maxv-dv
+			if(pcent[ii]<minv):
+				pcent[ii]=minv+dv
+			if(psig[ii]>max_vw):
+				psig[ii] = 0.99*max_vw
+			if(psig[ii]<min_vw):
+				psig[ii]=1.01*min_vw
 
-	psig[psig<dv] = dv
+			guess[3*ii] = pamp[ii]
+			guess[3*ii+1] = pcent[ii]
+			guess[3*ii+2] = psig[ii]
 
-	n_peaks = len(pamp)
+			bound[0][3*ii] = n*noise
+			bound[1][3*ii] = 2*max(spec) + n*noise
+			bound[0][3*ii+1] = minv
+			bound[1][3*ii+1] = maxv
+			bound[0][3*ii+2] = min_vw
+			bound[1][3*ii+2] = max_vw
+
 
 	if(debug==1):
-	
 		print( "######## Guess values #########")
 		print( "Number of peaks = ", n_peaks)
 		print( "Peak ids = ", pid)
-		print( "Peak centroids = ", pcent)
-		print( "Peak amplitude = ", pamp)
-		print( "Peak width = ", psig)
+		print( "Peak centroids = ", guess[1::3])
+		print( "Peak amplitude = ", guess[::3])
+		print( "Peak width = ", guess[2::3])
 		print( " ")
 
-	### if more than 6 components were detected then lets try fitting with 6
 
-	if(n_peaks>6):
 
-		print( "More than 6 peaks were detected. We will try to fit with just 6")
-		pamp=pamp[:6]
-		psig=psig[:6]
-		pcent = pcent[:6]
-		pid = pid[:6]
-		n_peaks = 6
-	
+	### Fit for the first time using the initial guesses
+	nit=0
+	co_eff, errors, converged, model, AIC = fit_guess(vel,spec,mask,guess,bound,noise)
+	keep_going=1
+
+	### Debug display information and if no convergence is reached then try a single component guess and fit again
+	if(debug==1):
+		print("##### After first fit #####")
+		print("Co_eff = ", co_eff)
+		print("AIC = ", AIC)
+		print(" ")
+
+	### No convergence is found after the first fit, try to simplify and try again with a single component
+	if(converged!=1):
 		if(debug==1):
-			matplotlib.pyplot.plot(vel,spec)
-			matplotlib.pyplot.show()
-			print( pamp)
-			print( psig)
-			print( pcent)
+			print("First fit did not converge")
+			print("Guess parameters = ",guess)
+			print("Noise = %.3lf, velocity channel = %.3lf" %(noise, dv))
 
-	guess = numpy.zeros(3*n_peaks)
-	bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-	guess = numpy.array(guess,dtype=numpy.double)
+		guess = single_gauss_guess(vel,spec,mask)
+		### Maybe a bad pixel/too few emission channels even after padding so return non-convergence tag
+		if(numpy.isnan(guess[2])):
+			return [[-3,0,0],[0,0,0],1e9]
+
+		### Else proceed
+		n_peaks = 1
+		bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
+		bound[0][0] = n*noise
+		bound[1][0] = 2*max(spec) + n*noise
+		bound[0][1] = minv
+		bound[1][1] = maxv
+		bound[0][2] = min_vw
+		bound[1][2] = max_vw
+
+		if(guess[0]<n*noise):
+			guess[0]=1.05*n*noise
+		if(guess[1]>maxv):
+			guess[1]=maxv-dv
+		if(guess[1]<minv):
+			guess[1]=minv+dv
+		if(guess[2]>max_vw):
+			guess[2] = 0.99*max_vw
+		if(guess[2]<min_vw):
+			guess[2]=1.05*min_vw
+
+		### Try a fit with this new guess
+		co_eff, errors, converged, model, AIC = fit_guess(vel,spec,mask,guess,bound,noise)
+
+		### If still not converging then exit for this spectrum
+		if(converged!=1):
+			print("Fit did not converge")
+			return [[-1,0,0],[0,0,0],1e9]
+
+		
 
 
-	### set limits on the guess and fill the guess and boundary arrays
+	### Until the AIC minimum is found or a sufficient number of iterations are performed keep adding and removing components to find optimal solution
+
+	while(keep_going==1 and nit<max_it and converged==1):
+
+		### Reset the AICs and co_effs
+		AIC_m = 1e9
+		AIC_l = 1e9
+		co_eff_m = co_eff
+		co_eff_l = co_eff
+		check=0
+
+		#### Check for boundary components
+		check = check_for_boundary(co_eff,bound)
+		if(check==1):
+			### If there is a boundary component, remove it and get new guesses without it
+			guess_new, bound_new = remove_boundary_components(co_eff,bound)
+			### If the new guess was reasonable fit using it
+			if(guess_new[0]>0):
+				co_eff_n,errors_n,converged_n,model_n,AIC_n = fit_guess(vel,spec,mask,guess_new,bound_new,noise)
+				### If the fit using the new guess without the boundary component is converged we take it
+				if(converged_n==1):
+					n_peaks = int(len(co_eff_n[::3]))
+					co_eff = co_eff_n
+					errors = errors_n
+					converged = converged_n
+					model = model_n
+					AIC = AIC_n
+					guess = guess_new
+					bound = bound_new
+
+		### Add an additional component if the maximum number of peaks hasn't been reached and fit again
+		if(n_peaks<max_peaks):
+			guess_m, bound_m = add_component(vel,spec,mask,model,co_eff,bound)
+			co_eff_m, errors_m, converged_m, model_m, AIC_m = fit_guess(vel,spec,mask,guess_m,bound_m,noise)
+		else:
+			AIC_m = 1e9
+
+		### If there are currently more than 1 peaks, remove one of the peaks and fit again
+		if(n_peaks>1):
+			guess_l, bound_l = remove_component(vel,spec,mask,model,co_eff,bound)
+			co_eff_l, errors_l, converged_l, model_l, AIC_l = fit_guess(vel,spec,mask,guess_l,bound_l,noise)
+		else:
+			AIC_l = 1e9
+		
+		### Debug info
+		if(debug==1):
+			print("##### After %d fit #####" %(nit+1))
+			print("Keep going check = %d, Number of peaks = %d" %(keep_going, n_peaks))
+			print("AIC of npeaks = %.3lf, AIC of npeaks-1 = %.3lf, AIC of npeaks+1 = %.3lf" %(AIC,AIC_l,AIC_m))
+			print("Co_eff of npeaks:", co_eff)
+			print("Co_eff of npeaks-1:", co_eff_l)
+			print("Co_eff of npeaks+1:", co_eff_m)
+			print(" ")
+
+
+		### Current fit has a better AIC than both the added and removed component fits, thus we stop the iterations
+		if((AIC + daic < AIC_l and AIC <= AIC_m + daic)):
+			keep_going=0
+
+		### Removing a component leads to better fit than both the added component and current fits. Repeat again with this new fit
+		if(AIC_l <= AIC + daic):
+			co_eff = co_eff_l
+			errors = errors_l
+			converged = converged_l
+			model = model_l
+			AIC = AIC_l
+			guess = guess_l
+			bound = bound_l
+			n_peaks = n_peaks - 1
+			keep_going = 1
+
+		### Adding a component leads to a better fit than both the current and removed component fits. Repeat again with this new fit
+		if(AIC_m + daic < AIC and AIC_l>AIC+daic):
+			co_eff = co_eff_m
+			errors = errors_m
+			converged = converged_m
+			model = model_m
+			AIC = AIC_m
+			guess = guess_m
+			bound = bound_m
+			n_peaks = n_peaks + 1
+			keep_going = 1
+
+		### Add an iteration to the counter
+		nit = nit+1
+		
+	### If there is no convergence at any point return error
+	if(converged!=1):
+		print("Fit did not converge")
+		return [[-1,0,0],[0,0,0],1e9]
+
+	### If the number of iterations is too high then return best fit so far and inform user
+	if(nit==max_it):
+		#print("Took lots of iterations")
+		return co_eff, errors, AIC
+
+
+	return co_eff, errors, AIC
+
+### Function to pad the mask around the emission channels
+def pad_mask(mask,mask_pad):
+
+	nv = len(mask)
+	ii = mask_pad
+	while(ii<nv-mask_pad):
+		if(mask[ii]==1 and mask[ii-1]==0):
+			mask[ii-mask_pad:ii] = 1
+			ii = ii + 1
+			continue
+		elif(mask[ii]==0 and mask[ii-1]==1):
+			mask[ii:ii+mask_pad] = 1
+			ii = ii + mask_pad + 1
+			continue
+		else:
+			ii = ii + 1
+
+	return mask
+
+
+### A function to determine a single component guess to help poor convergence spectra
+def single_gauss_guess(vel,spec,mask):
+
+	# Consider only parts of the spectra masked as emission
+	vv = vel[mask==1]
+	ss = spec[mask==1]
+	# Discard channels with negative intensity values to avoid biasing moment estimates
+	vv = vv[ss>0]
+	ss = ss[ss>0]
+	# Calculate moments 1 and 2 and use them as estimates of the centroid and width of the single component guess
+	mom1, mom2 = weighted_avg_and_std(vv,ss)
+	guess = numpy.zeros(3,dtype=numpy.double)
+	dv = vel[1]-vel[0]
+	mom1_index = int((mom1 - vel[0])/dv) + 1
+	guess[0] = spec[mom1_index]
+	guess[1] = mom1
+	guess[2] = mom2
+	return guess
+
+### Function to return N superimposed Gaussian functions 
+def multi_gauss(vel,params):
+	N = int(len(params)/3)
+	a,b,c = numpy.array(params[::3]),numpy.array(params[1::3]),numpy.array(params[2::3])
+	y = numpy.zeros_like(vel)
+	for ii in range(0,N):
+		y = y + a[ii]*numpy.exp(-(vel-b[ii])**2 / (2*c[ii]**2))
+	return y
+
+
+### Function to fit a N Gaussian function
+def fit_guess(vel,spec,mask,guess,bound,noise):
+
+	try:
+		co_eff, var_matrix = curve_fit(lambda vel, *guess: multi_gauss(vel,guess),vel,spec,p0=guess,method="trf",bounds=bound)
+		errors = numpy.sqrt(numpy.diag(var_matrix))
+		converged = 1
+		model = multi_gauss(vel,co_eff)
+		AIC = calc_AIC(vel,spec,co_eff,model,mask,noise)
+		if(AIC==1e9):
+			converged=0
+
+	except RuntimeError:
+		co_eff = numpy.zeros_like(guess)
+		errors = numpy.zeros_like(guess)
+		converged=0
+		model = numpy.zeros_like(vel)
+		AIC = 1e9
+
+	return co_eff, errors, converged, model, AIC
+
+
+### Calculate the corrected AIC using only the velocity channels with emission
+def calc_AIC(vel,spec,co_eff,model,mask,noise):
+
+	res = spec - model 
+	res = res[mask==1]
+
+	### Number of data points equal to number of velocity channels used to calculate residuals
+	### Number of parameters of the model is equal to the number of parameters for the fitting
+	n = len(res)
+	k = int(len(co_eff))
+
+	### If there are too few data points to calculate the correction factor then return extremely high AIC
+	if(n-k-1 < 1):
+		AIC=1e9
+	else:
+		AIC = 2*k + n*numpy.log(2*numpy.pi) + n*numpy.log(noise**2) + (sum(res**2))/(noise**2) + (2*k**2 + 2*k)/(n-k-1)
+
+	return AIC
+
+
+### Add a component by finding the location of the maximum residual
+def add_component(vel,spec,mask,model,guess,bound):
+
+	res = spec - model
+	res[mask==0] = 0
+
+	### Expand bound array first
+	n_peaks = int(len(guess[::3]))
+	bound2 = (numpy.zeros(3*n_peaks + 3),numpy.zeros(3*n_peaks + 3))
+
+	for ii in range(0,n_peaks+1):
+
+		bound2[0][3*ii] = bound[0][0]
+		bound2[1][3*ii] = bound[1][0]
+		bound2[0][3*ii+1] = bound[0][1]
+		bound2[1][3*ii+1] = bound[1][1]
+		bound2[0][3*ii+2] = bound[0][2]
+		bound2[1][3*ii+2] = bound[1][2]
+
+	### Now do guess
+	guess2 = numpy.zeros(len(guess) + 3)
+	guess2[:3*n_peaks] = guess[:3*n_peaks]
+
+	### Find place with highest residual
+	guess2[3*n_peaks] = numpy.amax(res)
+	high_res = numpy.argmax(res)
+	guess2[3*n_peaks+1] = vel[high_res]
+	guess2[3*n_peaks+2] = 4.01*bound[0][2]
+
+	### Do some double checks with the guessed parameters to ensure they lie within the bounds.
+	if(guess2[3*n_peaks]<bound2[0][0]):
+		guess2[3*n_peaks] = 1.5 * bound2[0][0]
+	if(guess2[3*n_peaks]>bound2[1][0]):
+		guess2[3*n_peaks] = 0.9 * bound2[1][0]
 	
+	return guess2,bound2
+
+### Remove a component by removing the smallest amplitude component
+def remove_component(vel,spec,mask,model,guess,bound):
+	
+	### Reduce bound array first
+	n_peaks = int(len(guess[::3]))
+	bound2 = (numpy.zeros(3*n_peaks - 3),numpy.zeros(3*n_peaks - 3))
+
+	for ii in range(0,n_peaks-1):
+
+		bound2[0][3*ii] = bound[0][0]
+		bound2[1][3*ii] = bound[1][0]
+		bound2[0][3*ii+1] = bound[0][1]
+		bound2[1][3*ii+1] = bound[1][1]
+		bound2[0][3*ii+2] = bound[0][2]
+		bound2[1][3*ii+2] = bound[1][2]
+
+	### Extract the three parameters of the Gaussian fits
+	pamp = guess[::3]
+	pcent = guess[1::3]
+	psig = guess[2::3]
+
+	### Find the two components which are closest together and pick the lower amplitude one.
+	diff_v = 1e9
+	min_diff_v = 0
 	for ii in range(0,n_peaks):
+		for jj in range(ii+1,n_peaks):
 
-		if(pamp[ii]<n*noise):
-			pamp[ii]=1.01*n*noise
-		if(pcent[ii]>maxv):
-			pcent[ii]=maxv-dv
-		if(pcent[ii]<minv):
-			pcent[ii]=minv+dv
-		if(psig[ii]>maxv-minv):
-			psig[ii] = 0.99*(maxv-minv)
-		if(psig[ii]<dv):
-			psig[ii]=dv*1.01
+			ddv = numpy.fabs(pcent[ii] - pcent[jj])
+			if(ddv<diff_v):
+				diff_v = ddv
+				if(pamp[ii]<pamp[jj]):
+					min_diff_v=ii
+				else:
+					min_diff_v=jj
 
-		guess[3*ii] = pamp[ii]
-		guess[3*ii+1] = pcent[ii]
-		guess[3*ii+2] = psig[ii]
+	guess2 = numpy.zeros(len(guess) - 3)
+	ind = numpy.arange(0,n_peaks,1)
 
-		bound[0][3*ii] = n*noise
-		bound[1][3*ii] = 2*max(spec)
-		bound[0][3*ii+1] = minv
-		bound[1][3*ii+1] = maxv
-		bound[0][3*ii+2] = dv
-		bound[1][3*ii+2] = maxv-minv
+	guess2[::3] = pamp[ind!=min_diff_v]
+	guess2[1::3] = pcent[ind!=min_diff_v]
+	guess2[2::3] = psig[ind!=min_diff_v]
+
+	return guess2,bound2
 
 
-	### Fill the arrays for the guesses which contain fewer peaks than detected. This is a safety feature against over-fitting
+### Check if the co-efficients are too close to the minimum amplitude or width boundaries. Typical of bad fits
+def check_for_boundary(co_eff,bound):
 
-	if(n_peaks>1):
-		bound3 = (numpy.zeros(3*n_peaks -3),numpy.zeros(3*n_peaks - 3))
+	q = numpy.sum(co_eff[::3] < 1.02*bound[0][0]) + numpy.sum(co_eff[2::3] < 1.02*bound[0][2])
 
-		for ii in range(0,n_peaks-1):
+	if(q>0):
+		check_bound=1
+	else:
+		check_bound=0
 
-			bound3[0][3*ii] = n*noise
-			bound3[1][3*ii] = 2*max(spec)
-			bound3[0][3*ii+1] = minv
-			bound3[1][3*ii+1] = maxv
-			bound3[0][3*ii+2] = dv
-			bound3[1][3*ii+2] = maxv-minv
+	return check_bound
 
-		guess3 = numpy.zeros(3*n_peaks-3)
-		min_amp_index = numpy.argmin(guess[::3])
-		c_num=0
+### Remove the components which are close to the minimum amplitude or width boundaries
+def remove_boundary_components(co_eff,bound):
+
+	#### First check the amplitudes
+	q = numpy.sum(co_eff[::3] < 1.02*bound[0][0])
+
+	### Check is every component has a tiny amplitude
+	if(q==len(co_eff[::3])):
+		### If there is only one component we can't remove it so return it
+		if(q==1):
+			return co_eff, bound
+		### If there is more than one component then remove all but the first and try again	
+		if(q>1):
+			return co_eff[:3], [bound[0][:3],bound[1][:3]]
+
+	### There are components with tiny amplitudes, but not all		
+	if(q>0):
+		### Make new bounds array
+		n_peaks = len(co_eff[::3]) - q
+		bound2 = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
+
 		for ii in range(0,n_peaks):
+			bound2[0][3*ii] = bound[0][0]
+			bound2[1][3*ii] = bound[1][0]
+			bound2[0][3*ii+1] = bound[0][1]
+			bound2[1][3*ii+1] = bound[1][1]
+			bound2[0][3*ii+2] = bound[0][2]
+			bound2[1][3*ii+2] = bound[1][2]
 
-			if(ii!=min_amp_index):
-				
-				guess3[3*c_num:3*c_num+3:1] = guess[(3*ii):(3*ii)+3:1]
-				c_num=c_num+1
+		### Copy over the components which have amplitudes above the minimum
+		guess2 = numpy.zeros(3*n_peaks)
+		p = co_eff[::3] > 1.02*bound[0][0]
+		guess2[::3] = co_eff[::3][p]
+		guess2[1::3] = co_eff[1::3][p]
+		guess2[2::3] = co_eff[2::3][p]
 
+		co_eff = guess2
+		bound=bound2
 
-	if(n_peaks>2):
-		bound4 = (numpy.zeros(3*n_peaks -6),numpy.zeros(3*n_peaks - 6))
 
-		for ii in range(0,n_peaks-2):
+	### Now check the widths
+	q = numpy.sum(co_eff[2::3]<1.02*bound[0][2])
 
-			bound4[0][3*ii] = n*noise
-			bound4[1][3*ii] = 2*max(spec)
-			bound4[0][3*ii+1] = minv
-			bound4[1][3*ii+1] = maxv
-			bound4[0][3*ii+2] = dv
-			bound4[1][3*ii+2] = maxv-minv
+	### Check is every component has a tiny width
+	if(q==len(co_eff[::3])):
+		### If there is only one component we can't remove it so return it
+		if(q==1):
+			return co_eff, bound
+		### If there is more than one component then remove all but the first and try again
+		if(q>1):
+			return co_eff[:3] , [bound[0][:3],bound[1][:3]]
 
-		guess4 = numpy.zeros(3*n_peaks-6)
-		min_amp_index = numpy.argmin(guess3[::3])
-		c_num=0
-		for ii in range(0,n_peaks-1):
+	### There are components with tiny amplitudes, but not all
+	if(q>0):
 
-			if(ii!=min_amp_index):
-				
-				guess4[3*c_num:3*c_num+3] = guess3[3*ii:3*ii+3]
-				c_num=c_num+1
+		### Make new bounds array
+		n_peaks = len(co_eff[::3]) - q
+		bound2 = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
 
+		for ii in range(0,n_peaks):
+			bound2[0][3*ii] = bound[0][0]
+			bound2[1][3*ii] = bound[1][0]
+			bound2[0][3*ii+1] = bound[0][1]
+			bound2[1][3*ii+1] = bound[1][1]
+			bound2[0][3*ii+2] = bound[0][2]
+			bound2[1][3*ii+2] = bound[1][2]
 
-	if(n_peaks>3):
-		bound5 = (numpy.zeros(3*n_peaks -9),numpy.zeros(3*n_peaks - 9))
+		### Copy over the components which have amplitudes above the minimum
+		guess2 = numpy.zeros(3*n_peaks)
+		p = co_eff[2::3] > 1.02*bound[0][2]
+		guess2[::3] = co_eff[::3][p]
+		guess2[1::3] = co_eff[1::3][p]
+		guess2[2::3] = co_eff[2::3][p]
 
-		for ii in range(0,n_peaks-3):
+		co_eff = guess2
+		bound=bound2
 
-			bound5[0][3*ii] = n*noise
-			bound5[1][3*ii] = 2*max(spec)
-			bound5[0][3*ii+1] = minv
-			bound5[1][3*ii+1] = maxv
-			bound5[0][3*ii+2] = dv
-			bound5[1][3*ii+2] = maxv-minv
+	return co_eff,bound
 
-		guess5 = numpy.zeros(3*n_peaks-9)
-		min_amp_index = numpy.argmin(guess4[::3])
-		c_num=0
-		for ii in range(0,n_peaks-2):
 
-			if(ii!=min_amp_index):
-				
-				guess5[3*c_num:3*c_num+3] = guess4[3*ii:3*ii+3]
-				c_num=c_num+1
 
 
-	if(n_peaks>4):
-		bound6 = (numpy.zeros(3*n_peaks -12),numpy.zeros(3*n_peaks - 12))
 
-		for ii in range(0,n_peaks-4):
 
-			bound6[0][3*ii] = n*noise
-			bound6[1][3*ii] = 2*max(spec)
-			bound6[0][3*ii+1] = minv
-			bound6[1][3*ii+1] = maxv
-			bound6[0][3*ii+2] = dv
-			bound6[1][3*ii+2] = maxv-minv
 
-		guess6 = numpy.zeros(3*n_peaks-12)
-		min_amp_index = numpy.argmin(guess5[::3])
-		c_num=0
-		for ii in range(0,n_peaks-3):
-
-			if(ii!=min_amp_index):
-				
-				guess6[3*c_num:3*c_num+3] = guess5[3*ii:3*ii+3]
-				c_num=c_num+1
-
-
-	if(n_peaks>5):
-		bound7 = (numpy.zeros(3*n_peaks -15),numpy.zeros(3*n_peaks - 15))
-
-		for ii in range(0,n_peaks-5):
-
-			bound7[0][3*ii] = n*noise
-			bound7[1][3*ii] = 2*max(spec)
-			bound7[0][3*ii+1] = minv
-			bound7[1][3*ii+1] = maxv
-			bound7[0][3*ii+2] = dv
-			bound7[1][3*ii+2] = maxv-minv
-
-		guess7 = numpy.zeros(3*n_peaks-15)
-		min_amp_index = numpy.argmin(guess6[::3])
-		c_num=0
-		for ii in range(0,n_peaks-4):
-
-			if(ii!=min_amp_index):
-				
-				guess7[3*c_num:3*c_num+3] = guess6[3*ii:3*ii+3]
-				c_num=c_num+1
-
-
-
-
-	### Here we fit a single peak
-
-	
-	if(n_peaks==1):
-		r_chi_sq, res, co_eff, var_matrix, converged = fit1(vel,spec,guess,bound,noise)
-
-		
-		if(debug==1):
-			print( "########## First fit ###########")
-			print( "Number of peaks = ", n_peaks)
-			print( "Reduced chi_sq = ", r_chi_sq)
-			print( "Residuals = ", res)
-			print( "Co-effs = ", co_eff)
-			print( "Converged = ", converged)
-			print( " ")
-			
-
-	### If two peaks were fitted we fit with 2 and also 1 peak. Then we compare the reduced chi_sq to the chi_sq limit from the parameters. If the 1 peak fit is sufficiently good, we keep it.
-
-	elif(n_peaks==2):
-		r_chi_sq, res, co_eff, var_matrix, converged = fit2(vel,spec,guess,bound,noise)
-		
-		r_chi_sq2, res2, co_eff2, var_matrix2, converged2 = fit1(vel,spec,guess3,bound3,noise)
-
-		if(debug==1):
-			print( "########## First fit ###########")
-			print( "Number of peaks = ", n_peaks)
-			print( " ")
-			print( "For the 2 peak fit")
-			print( "Reduced chi_sq = ", r_chi_sq)
-			print( "Residuals = ", res)
-			print( "Co-effs = ", co_eff)
-			print( "Converged = ", converged)
-			print( " ")
-			print( "For the 1 peak fit")
-			print( "Reduced chi_sq = ", r_chi_sq2)
-			print( "Residuals = ", res2)
-			print( "Co-effs = ", co_eff2)
-			print( "Converged = ", converged2)
-			print( " ")
-
-		if(r_chi_sq2<chi_limit and converged2==1):
-
-			n_peaks=1
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess3
-			bound = bound3
-			r_chi_sq = r_chi_sq2
-			res = res2
-			co_eff = co_eff2
-			var_matrix = var_matrix2
-			converged = converged2
-
-		if(debug==1):
-			print( "####### After check ########")
-			print( "Number of peaks = ", n_peaks)
-			print( " ")
-
-
-	### If 3 peaks detected we try fitting with 3, 2 and 1 peaks. 
-		
-	elif(n_peaks==3):
-		r_chi_sq, res, co_eff, var_matrix, converged = fit3(vel,spec,guess,bound,noise)
-
-		r_chi_sq2, res2, co_eff2, var_matrix2, converged2 = fit2(vel,spec,guess3,bound3,noise)
-
-		r_chi_sq3, res3, co_eff3, var_matrix3, converged3 = fit1(vel,spec,guess4,bound4,noise)
-
-
-		if(debug==1):
-			print( "########## First fit ###########")
-			print( "Number of peaks = ", n_peaks)
-			print( " ")
-			print( "For the 3 peak fit")
-			print( "Reduced chi_sq = ", r_chi_sq)
-			print( "Residuals = ", res)
-			print( "Co-effs = ", co_eff)
-			print( "Converged = ", converged)
-			print( " ")
-			print( "For the 2 peak fit")
-			print( "Reduced chi_sq = ", r_chi_sq2)
-			print( "Residuals = ", res2)
-			print( "Co-effs = ", co_eff2)
-			print( "Converged = ", converged2)
-			print( " ")
-			print( "For the 1 peak fit")
-			print( "Reduced chi_sq = ", r_chi_sq3)
-			print( "Residuals = ", res3)
-			print( "Co-effs = ", co_eff3)
-			print( "Converged = ", converged3)
-			print( " ")
-
-		if(r_chi_sq3<chi_limit and converged3==1):
-
-			n_peaks=1 
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess4
-			bound = bound4
-			r_chi_sq = r_chi_sq3
-			res = res3
-			co_eff = co_eff3
-			var_matrix = var_matrix3
-			converged = converged3
-
-		elif(r_chi_sq2<chi_limit and converged2==1):
-
-			n_peaks=2
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess3
-			bound = bound3
-			r_chi_sq = r_chi_sq2
-			res = res2
-			co_eff = co_eff2
-			var_matrix = var_matrix2
-			converged = converged2
-
-
-	### If 4 peaks detected we try fitting 4, 3, 2 and 1 peaks
-
-	elif(n_peaks==4):
-		r_chi_sq, res, co_eff, var_matrix, converged = fit4(vel,spec,guess,bound,noise)
-
-		r_chi_sq2, res2, co_eff2, var_matrix2, converged2 = fit3(vel,spec,guess3,bound3,noise)
-
-		r_chi_sq3, res3, co_eff3, var_matrix3, converged3 = fit2(vel,spec,guess4,bound4,noise)
-
-		r_chi_sq4, res4, co_eff4, var_matrix4, converged4 = fit1(vel,spec,guess5,bound5,noise)
-
-		if(r_chi_sq4<chi_limit and converged4==1):
-
-			n_peaks=1
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess5
-			bound = bound5
-			r_chi_sq = r_chi_sq4
-			res = res4
-			co_eff = co_eff4
-			var_matrix = var_matrix4
-			converged = converged4
-
-		elif(r_chi_sq3<chi_limit and converged3==1):
-
-			n_peaks=2 
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess4
-			bound = bound4
-			r_chi_sq = r_chi_sq3
-			res = res3
-			co_eff = co_eff3
-			var_matrix = var_matrix3
-			converged = converged2
-
-		elif(r_chi_sq2<chi_limit and converged2==1):
-
-			n_peaks=3
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess3
-			bound = bound3
-			r_chi_sq = r_chi_sq2
-			res = res2
-			co_eff = co_eff2
-			var_matrix = var_matrix2
-			converged = converged2
-
-
-
-	### If 5 peaks detected, then fit with 5, 4, 3, 2 and 1.
-
-	elif(n_peaks==5):
-		r_chi_sq, res, co_eff, var_matrix, converged = fit5(vel,spec,guess,bound,noise)
-
-		r_chi_sq2, res2, co_eff2, var_matrix2, converged2 = fit4(vel,spec,guess3,bound3,noise)
-
-		r_chi_sq3, res3, co_eff3, var_matrix3, converged3 = fit3(vel,spec,guess4,bound4,noise)
-
-		r_chi_sq4, res4, co_eff4, var_matrix4, converged4 = fit2(vel,spec,guess5,bound5,noise)
-
-		r_chi_sq5, res5, co_eff5, var_matrix5, converged5 = fit1(vel,spec,guess6,bound6,noise)
-
-		if(r_chi_sq5<chi_limit and converged5==1):
-
-			n_peaks=1
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess6
-			bound = bound6
-			r_chi_sq = r_chi_sq5
-			res = res5
-			co_eff = co_eff5
-			var_matrix = var_matrix5
-			converged = converged5
-
-		elif(r_chi_sq4<chi_limit and converged4==1):
-
-			n_peaks=2
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess5
-			bound = bound5
-			r_chi_sq = r_chi_sq4
-			res = res4
-			co_eff = co_eff4
-			var_matrix = var_matrix4
-			converged = converged4
-
-		elif(r_chi_sq3<chi_limit and converged3==1):
-
-			n_peaks=3
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess4
-			bound = bound4
-			r_chi_sq = r_chi_sq3
-			res = res3
-			co_eff = co_eff3
-			var_matrix = var_matrix3
-			converged = converged3
-
-		elif(r_chi_sq2<chi_limit and converged2==1):
-
-			n_peaks=4
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess3
-			bound = bound3
-			r_chi_sq = r_chi_sq2
-			res = res2
-			co_eff = co_eff2
-			var_matrix = var_matrix2
-			converged = converged2
-
-
-	### If 6 peaks detected, fit 6, 5, 4, 3, 2 and 1 peaks
-
-	elif(n_peaks==6):
-		r_chi_sq, res, co_eff, var_matrix, converged = fit6(vel,spec,guess,bound,noise)
-
-		r_chi_sq2, res2, co_eff2, var_matrix2, converged2 = fit5(vel,spec,guess3,bound3,noise)
-
-		r_chi_sq3, res3, co_eff3, var_matrix3, converged3 = fit4(vel,spec,guess4,bound4,noise)
-
-		r_chi_sq4, res4, co_eff4, var_matrix4, converged4 = fit3(vel,spec,guess5,bound5,noise)
-
-		r_chi_sq5, res5, co_eff5, var_matrix5, converged5 = fit2(vel,spec,guess6,bound6,noise)
-
-		r_chi_sq6, res6, co_eff6, var_matrix6, converged6 = fit1(vel,spec,guess7,bound7,noise)
-
-		if(r_chi_sq6<chi_limit and converged6==1):
-
-			n_peaks=1
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess7
-			bound = bound7
-			r_chi_sq = r_chi_sq6
-			res = res6
-			co_eff = co_eff6
-			var_matrix = var_matrix6
-			converged = converged6
-
-		elif(r_chi_sq5<chi_limit and converged5==1):
-
-			n_peaks=2
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess6
-			bound = bound6
-			r_chi_sq = r_chi_sq5
-			res = res5
-			co_eff = co_eff5
-			var_matrix = var_matrix5
-			converged = converged5
-
-		elif(r_chi_sq4<chi_limit and converged4==1):
-
-			n_peaks=3
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess5
-			bound = bound5
-			r_chi_sq = r_chi_sq4
-			res = res4
-			co_eff = co_eff4
-			var_matrix = var_matrix4
-			converged = converged4
-
-		elif(r_chi_sq3<chi_limit and converged3==1):
-
-			n_peaks=4
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess4
-			bound = bound4
-			r_chi_sq = r_chi_sq3
-			res = res3
-			co_eff = co_eff3
-			var_matrix = var_matrix3
-			converged = converged3
-
-		elif(r_chi_sq2<chi_limit and converged2==1):
-
-			n_peaks=5
-
-			guess = numpy.zeros(3*n_peaks)
-			bound = (numpy.zeros(3*n_peaks),numpy.zeros(3*n_peaks))
-			guess = numpy.array(guess,dtype=numpy.double)
-
-			co_eff = numpy.zeros(3*n_peaks)
-			var_matrix = numpy.zeros((3*n_peaks,3*n_peaks))
-
-			guess = guess3
-			bound = bound3
-			r_chi_sq = r_chi_sq2
-			res = res2
-			co_eff = co_eff2
-			var_matrix = var_matrix2
-			converged = converged2
-
-
-
-
-	### If no fit converged then we exit
-	if(converged==0):
-
-		print( "No convergence")
-		return [[0,0,0],[0]]
-
-	### check for an overlap if this option is switched on 
-	if(n_peaks>1 and overlap_tag == 1):
-		overlap = check_overlap(co_eff,dv)
-
-		if(debug==1):
-			print( "##### Check overlap #####")
-			print( "Overlap = ", overlap)
-			print( " ")
-		
-
-	### if we have an overlap then we need to drop a peak and fit with one fewer
-	if(overlap==1 and n_peaks>1):
-
-		bound2 = (numpy.zeros(3*n_peaks -3),numpy.zeros(3*n_peaks - 3))
-
-		for ii in range(0,n_peaks-1):
-
-			bound2[0][3*ii] = n*noise
-			bound2[1][3*ii] = 2*max(spec)
-			bound2[0][3*ii+1] = minv
-			bound2[1][3*ii+1] = maxv
-			bound2[0][3*ii+2] = dv
-			bound2[1][3*ii+2] = maxv-minv
-
-		tbr_index = numpy.argmax(guess[::3])
-		guess2 = numpy.zeros(3*(n_peaks-1))
-		guess2[:3*tbr_index] = guess[:3*tbr_index]
-		if(3*tbr_index < 3*n_peaks - 3):
-			guess2[3*tbr_index:] = guess[3*tbr_index + 3:]
-
-
-		if(n_peaks==2):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit1(vel,spec,guess2,bound2,noise)
-		if(n_peaks==3):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit2(vel,spec,guess2,bound2,noise)
-		if(n_peaks==4):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit3(vel,spec,guess2,bound2,noise)
-		if(n_peaks==5):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit4(vel,spec,guess2,bound2,noise)
-		if(n_peaks==6):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit5(vel,spec,guess2,bound2,noise)
-
-		if(debug==1):
-			print( "##### After overlap reduction #####")
-			print( "Number of peaks = ", n_peaks - 1)
-			print( "Reduced chi_sq = ", r_chi_sq2)
-			print( "Residuals = ", res2)
-			print( "Co-effs = ", co_eff2)
-			print( "Converged = ", converged)
-			print( " ")
-
-		#### check convergence, if no convergence we do not output the old fit as it still contains overlapping components.
-		if(converged==0):
-
-			print( "No convergence")
-			return [[0,0,0],[0]]
-
-		### if converged return the new fit
-		return co_eff2,r_chi_sq2				
-
-
-	
-	## No overlap and the fit converged but it isn't that good
-	if(overlap==0 and r_chi_sq > chi_limit and n_peaks<6):
-
-		### Add more guesses and bounds. We take the location of maximum residuial as the place to add a component.
-		guess2 = numpy.zeros(len(guess) + 3)
-		guess2[:3*n_peaks] = guess[:3*n_peaks]
-
-		high_res = numpy.argmax(numpy.fabs(res))
-
-		guess2[3*n_peaks] = 1.01*n*noise
-		guess2[3*n_peaks+1] = vel[high_res]
-		guess2[3*n_peaks+2] = 1.01*dv
-
-
-		bound2 = (numpy.zeros(3*n_peaks + 3),numpy.zeros(3*n_peaks + 3))
-
-		for ii in range(0,n_peaks+1):
-
-			bound2[0][3*ii] = n*noise
-			bound2[1][3*ii] = 2*max(spec)
-			bound2[0][3*ii+1] = minv
-			bound2[1][3*ii+1] = maxv
-			bound2[0][3*ii+2] = dv
-			bound2[1][3*ii+2] = maxv-minv
-
-		### Try fitting with this additional peak
-
-		if(n_peaks==1):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit2(vel,spec,guess2,bound2,noise)
-		if(n_peaks==2):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit3(vel,spec,guess2,bound2,noise)	
-		if(n_peaks==3):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit4(vel,spec,guess2,bound2,noise)	
-		if(n_peaks==4):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit5(vel,spec,guess2,bound2,noise)	
-		if(n_peaks==5):
-			r_chi_sq2, res2, co_eff2, var_matrix2, converged = fit6(vel,spec,guess2,bound2,noise)	
-
-
-		if(debug==1):
-
-			print( "##### Poor fit so we add one #####")
-			print( "Fitted with ", n_peaks + 1, " peaks")
-			print( "Reduced chi_sq = ", r_chi_sq2)
-			print( "Residuals = ", res2)
-			print( "Co-effs = ", co_eff2)
-			print( "Converged = ", converged)
-			print( " ")
-			
-
-		#Check if the fit converged we return the old bad fit.
-		if(converged==0):
-
-			return co_eff,r_chi_sq
-
-		### Check the new fit for overlapping peaks
-		if(overlap_tag==1):
-			overlap = check_overlap(co_eff2,dv)
-
-		### Check for tiny and thin components, this normally comes about from fitting noise
-		t_and_t = check_tiny_and_thin(co_eff2,dv,n,noise)
-
-		### if we have overlapping peaks or the new fit is worse than the old then we output the previous fit or we have a tiny and thin component. We therefore keep the old fit
-		if(overlap==1 or r_chi_sq2 > r_chi_sq or t_and_t==1):
-
-			return co_eff, r_chi_sq
-
-		### If the new fit doesn't contain an overlap and isn't overfitting and is a better fit then we output the new fit.
-		elif(overlap==0 and r_chi_sq2 < r_chi_sq and t_and_t==0):	
-
-			return co_eff2, r_chi_sq2			
-
-
-	## No overlap and the fit is good enough so lets output it
-	if(overlap==0 and r_chi_sq<chi_limit):
-
-		return co_eff,r_chi_sq
-
-	if(overlap==0 and r_chi_sq>chi_limit and n_peaks==6):
-
-		return co_eff,r_chi_sq
 
 
 
 ##### Test run functions, used to help determine the optimal values for the 3 important parameters: chi_limit, smoothing_length and signal to noise ratio
 
-
 ### The first is for the single Gaussian test, used to determine the average error on the fitting parameters
 
-def single_gaussian_test(paramfile):
+def single_gaussian_test(param):
 
-	param = ReadParameters(paramfile)
-
-	### Set off the lower integrated emission limit variable to 0 in case it was set to none zero in the parameter file
-
-	if(param["lower_integrated_emission_limit"] !=0):
-		param["lower_integrated_emission_limit"] = 0.0
 
 	### Unpack the parameter array
 
@@ -922,6 +676,11 @@ def single_gaussian_test(paramfile):
 	wid_max = param["test_width_max"]
 
 	plot_tag = param["test_plot_tag"]
+
+	var_noise = param["variable_noise"]
+	if(var_noise!=0):
+		print("variable_noise should be set to 0 for this test. Setting it to 0 now.")
+		param["variable_noise"] = 0
 
 
 	### Construct the velocity array
@@ -953,25 +712,24 @@ def single_gaussian_test(paramfile):
 		if((ii+1)%numpy.int(num_test/10.)==0):
 			print( "The test is %.2f %% complete" %(100*(ii+1)/numpy.float(num_test)))
 
+
 		### Pick a random amplitude, centroid and width
 		amp = numpy.random.rand(1)*(amp_max - amp_min) + amp_min
 		cen = numpy.random.rand(1)*(cen_max - cen_min) + cen_min
 		width = numpy.random.rand(1)*(wid_max - wid_min) + wid_min
 
 		### Produce Gaussian and add noise
-		y = gaussone(v,amp[0],cen[0],width[0])
+		y = multi_gauss(v,[amp,cen,width])
+		mask = numpy.zeros_like(y)
+		mask[y>0.1*numpy.amax(y)] = 1
 		no = numpy.random.normal(loc=0.0,scale=noise_level,size=spec_nv)
 		y = y+no
 
 
-		### Fit this synthetic spectrum
-		c2 = fit_single_line(v,y,param)
-
-		co=c2[0]
-		chi = c2[1]
+		co_eff,errors,AIC =fit_single_line(v,y,mask,param)
 
 		### Check that a fit was found
-		if(co[0]==0 or co[0]<0):
+		if(co_eff[0]==-1):
 			n = n + 1
 			print( "No line was detected")
 			print( "The amplitude, centroid and width was: ", amp, cen, width	)
@@ -980,22 +738,21 @@ def single_gaussian_test(paramfile):
 		else:
 
 			### If only a single Gaussian found, store the errors on the parameters
-			if(len(co)==3):
+			if(len(co_eff)==3):
 
-				a_e.append(numpy.fabs(amp-co[::3])/amp)
-				c_e.append(numpy.fabs((cen-co[1::3])/cen))
-				w_e.append(numpy.fabs(width-co[2::3])/width)
-				c_chi.append(chi)
+				a_e.append(numpy.fabs(amp-co_eff[::3])/amp)
+				c_e.append(numpy.fabs((cen-co_eff[1::3])/cen))
+				w_e.append(numpy.fabs(width-co_eff[2::3])/width)
 
 
 				### If the plot tag is turned on, plot the input parameter against the fitted parameters
 				if(plot_tag==1):
 					matplotlib.pyplot.figure(1)
-					matplotlib.pyplot.plot(amp,co[0],"kx")
+					matplotlib.pyplot.plot(amp,co_eff[0],"kx")
 					matplotlib.pyplot.figure(2)
-					matplotlib.pyplot.plot(cen,co[1],"kx")
+					matplotlib.pyplot.plot(cen,co_eff[1],"kx")
 					matplotlib.pyplot.figure(3)
-					matplotlib.pyplot.plot(width,co[2],"kx")
+					matplotlib.pyplot.plot(width,co_eff[2],"kx")
 
 
 			### More than one component was detected.
@@ -1003,7 +760,8 @@ def single_gaussian_test(paramfile):
 				n2 = n2 + 1
 				print( "More than one component was detected")
 				print( "The input components were: ", amp, cen, width)
-				print( "The output amplitudes, centroids and widths were: ", co[0::3], co[1::3], co[2::3])
+				print( "The output amplitudes, centroids and widths were: ", co_eff[0::3], co_eff[1::3], co_eff[2::3])
+				print( "Test spectrum ID: ", ii)
 
 
 	### print out the median errors and the interquartile range
@@ -1021,11 +779,7 @@ def single_gaussian_test(paramfile):
 	print( "Median error on amplitude as a percentage = %.2f + %.2f - %.2f" %(numpy.percentile(a_e, 50), (numpy.percentile(a_e,75)-numpy.percentile(a_e,50)), (numpy.percentile(a_e,50)-numpy.percentile(a_e,25))))
 	print( "Median error on centroids as a percentage = %.2f + %.2f - %.2f" %(numpy.percentile(c_e, 50), (numpy.percentile(c_e,75)-numpy.percentile(c_e,50)), (numpy.percentile(c_e,50)-numpy.percentile(c_e,25))))
 	print( "Median error on widths as a percentage    = %.2f + %.2f - %.2f" %(numpy.percentile(w_e, 50), (numpy.percentile(w_e,75)-numpy.percentile(w_e,50)) , (numpy.percentile(w_e,50)-numpy.percentile(w_e,25))))
-
-	### Also show the reduced chi_squared for these fits
-	c_chi = numpy.array(c_chi)
-	print( "Median reduced chi_squared                = %.2f + %.2f - %.2f" %(numpy.percentile(c_chi, 50), (numpy.percentile(c_chi,75)-numpy.percentile(c_chi,50)) , (numpy.percentile(c_chi,50)-numpy.percentile(c_chi,25))))
-
+	print( "The number of spectra identified to have more than 1 component was: %i (%.2f%%)" %(n2, n2/num_test * 100))
 
 	if(plot_tag==1):
 		matplotlib.pyplot.figure(1)
@@ -1037,8 +791,6 @@ def single_gaussian_test(paramfile):
 		matplotlib.pyplot.figure(3)
 		matplotlib.pyplot.xlabel("Input width")
 		matplotlib.pyplot.ylabel("Output width")
-		matplotlib.pyplot.figure(4)
-		matplotlib.pyplot.hist(c_chi,bins=40)
 		matplotlib.pyplot.show()
 
 
@@ -1048,14 +800,7 @@ def single_gaussian_test(paramfile):
 
 ### Here we now start the multiple component test. This is to test the code's ability to determine the number of components in test spectra.
 
-def multi_gaussian_test(paramfile):
-
-	param = ReadParameters(paramfile)
-
-	### Set off the lower integrated emission limit variable to 0 in case it was set to none zero in the parameter file
-
-	if(param["lower_integrated_emission_limit"] !=0):
-		param["lower_integrated_emission_limit"] = 0.0
+def multi_gaussian_test(param):
 
 	### Unpack the parameter array
 
@@ -1075,6 +820,11 @@ def multi_gaussian_test(paramfile):
 	wid_max = param["test_width_max"]
 
 	plot_tag = param["test_plot_tag"]
+
+	var_noise = param["variable_noise"]
+	if(var_noise!=0):
+		print("variable_noise should be set to 0 for this test. Setting it to 0 now.")
+		param["variable_noise"] = 0
 
 	### Construct the velocity array
 
@@ -1148,32 +898,22 @@ def multi_gaussian_test(paramfile):
 			nf[ii] = 0
 			continue
 
+		test_coeff = numpy.zeros(3*npeak)
+		test_coeff[::3] = amp
+		test_coeff[1::3] = cen
+		test_coeff[2::3] = width 
 
-		### Now we have the parameters for the test spectra, we create them and add noise.
-		if(npeak==1):
-			y = gaussone(v,amp[0],cen[0],width[0])
-
-		if(npeak==2):
-			y = gausstwo(v,amp[0],cen[0],width[0],amp[1],cen[1],width[1])
-
-		if(npeak==3):
-			y = gaussthree(v,amp[0],cen[0],width[0],amp[1],cen[1],width[1],amp[2],cen[2],width[2])
-
-		if(npeak==4):
-			y = gaussfour(v,amp[0],cen[0],width[0],amp[1],cen[1],width[1],amp[2],cen[2],width[2],amp[3],cen[3],width[3])
-
-
-		no =  numpy.random.normal(loc=0.0,scale=noise_level,size=spec_nv)
+		y = multi_gauss(v,test_coeff)
+		mask = numpy.zeros_like(y)
+		no = numpy.random.normal(loc=0.0,scale=noise_level,size=spec_nv)
 		y = y+no
+		mask[y>3*noise_level] = 1
 
 		### Fit this synthetic spectrum
-		c2 = fit_single_line(v,y,param)
-
-		co=c2[0]
-		chi = c2[1]
+		co_eff,errors,AIC =fit_single_line(v,y,mask,param)
 
 		### Check that a fit was found
-		if(co[0]==0 or co[0]<0):
+		if(co_eff[0]==-1):
 			nf[ii] = 0
 			print( "No components detected")
 			print( "The amplitude, centroid and width were: ", amp, cen, width)
@@ -1181,22 +921,18 @@ def multi_gaussian_test(paramfile):
 
 		### If a fit was found then determine the number of components and find it.
 		else:
-			if(len(co)==3):
-				nf[ii] = 1
-
-			if(len(co)==6):
-				nf[ii] = 2
-
-			if(len(co)==9):
-				nf[ii] = 3
-
-			if(len(co)==12):
-				nf[ii] = 4
-
+			nf[ii] = len(co_eff[::3])
 
 		### If the number of fitted components is not equal to the input number store this information.
 		if(ni[ii]!=nf[ii]):
 			count = count+1
+			print("")
+			print("The number of fitted components does not equal that of the input spectrum")
+			print("Co-efficients for the input spectrum:")
+			print(test_coeff)
+			print("Co-efficients for the model spectrum:")
+			print(co_eff)
+			print("")
 
 	print( " ")
 	print( " ")
@@ -1212,58 +948,72 @@ def multi_gaussian_test(paramfile):
 
 ##### Function for reading parameter file
 
-def ReadParameters(param_file):
+def read_parameters(param_file):
 
 
 	### The dictionaries for the type of variable and the variable itself
 
-	type_of_var = {"chi_limit"                        :   "float",
-                      "check_overlap"                     :   "int",
-                      "debug"                             :   "int",
-                      "lower_integrated_emission_limit"   :   "float",
-                      "smoothing_length"                  :   "float",
-	              "variable_noise"                    :   "int",
-	              "noise_level"                       :   "float",
-	              "noise_clip"                        :   "int",
-	              "signal_to_noise_ratio"             :   "float",
-                      "test_number"                       :   "int",
-                      "test_spec_min"                     :   "float",
-                      "test_spec_max"                     :   "float",
-                      "test_spec_num"                     :   "int",
-                      "test_noise"                        :   "float",
-                      "test_amplitude_min"                :   "float",
-                      "test_amplitude_max"                :   "float",
-                      "test_width_min"                    :   "float",
-                      "test_width_max"                    :   "float",
-                      "test_vel_cen_min"                  :   "float",
-                      "test_vel_cen_max"                  :   "float",
-                      "test_plot_tag"                     :   "int",
-                      "in_file_name"                      :   "str",
-                      "out_file_base"                     :   "str"}
+	type_of_var = {"debug"                             :   "int",
+                   "smoothing_length"                  :   "float",
+	               "variable_noise"                    :   "int",
+	               "noise_level"                       :   "float",
+	               "signal_to_noise_ratio"             :   "float",
+	               "max_peaks"                         :   "int",
+	               "max_iterations"                    :   "int",
+	               "min_velocity_channels"             :   "int",
+	               "min_width_value"                   :   "float",
+	               "max_width_value"                   :   "float",
+	               "mask_pad"                          :   "int",
+	               "delta_AIC_limit"                   :   "float",
+	               "output_base"                       :   "str",
+	               "velocity_channel_number"           :   "int",
+	               "upper_sigma_level"                 :   "float",
+	               "lower_sigma_level"                 :   "float",
+	               "mask_filter_size"                  :   "int",
+                   "test_number"                       :   "int",
+                   "test_spec_min"                     :   "float",
+                   "test_spec_max"                     :   "float",
+                   "test_spec_num"                     :   "int",
+                   "test_noise"                        :   "float",
+                   "test_amplitude_min"                :   "float",
+                   "test_amplitude_max"                :   "float",
+                   "test_width_min"                    :   "float",
+                   "test_width_max"                    :   "float",
+                   "test_vel_cen_min"                  :   "float",
+                   "test_vel_cen_max"                  :   "float",
+                   "test_plot_tag"                     :   "int",
+                   "data_in_file_name"                 :   "str"}
 
-	param = {"chi_limit"                        :   1.5,
-                "check_overlap"                     :   1,
-                "debug"                             :   0,
-                "lower_integrated_emission_limit"   :   0.5,
-                "smoothing_length"                  :   3.0,
-	        "variable_noise"                    :   0,
-	        "noise_level"                       :   0.1,
-	        "noise_clip"                        :   50,
-	        "signal_to_noise_ratio"             :   5,
-                "test_number"                       :   1000,
-                "test_spec_min"                     :   -3.0,
-                "test_spec_max"                     :   3.0,
-                "test_spec_num"                     :   75,
-                "test_noise"                        :   0.1,
-                "test_amplitude_min"                :   1.0,
-                "test_amplitude_max"                :   5.0,
-                "test_width_min"                    :   0.5,
-                "test_width_max"                    :   1.0,
-                "test_vel_cen_min"                  :   -2.5,
-                "test_vel_cen_max"                  :   2.5,
-                "test_plot_tag"                     :   0,
-                "in_file_name"                      :  "input.fits",
-                "out_file_base"                     :  "output"}
+	param = {"debug"                             :   0,
+             "smoothing_length"                  :   3.0,
+	         "variable_noise"                    :   0,
+	         "noise_level"                       :   0.1,
+	         "signal_to_noise_ratio"             :   5,
+	         "max_peaks"                         :   3,
+	         "max_iterations"                    :   5,
+	         "min_velocity_channels"             :   3,
+	         "min_width_value"                   :   0.1,
+	         "max_width_value"                   :   20.0,
+	         "mask_pad"                          :   2,
+	         "delta_AIC_limit"                   :   10.0,
+	         "output_base"                       :   "output",
+	         "velocity_channel_number"           :   30,
+	         "upper_sigma_level"                 :   8,
+	         "lower_sigma_level"                 :   4,
+	         "mask_filter_size"                  :   3,
+             "test_number"                       :   1000,
+             "test_spec_min"                     :   -3.0,
+             "test_spec_max"                     :   3.0,
+             "test_spec_num"                     :   75,
+             "test_noise"                        :   0.1,
+             "test_amplitude_min"                :   1.0,
+             "test_amplitude_max"                :   5.0,
+             "test_width_min"                    :   0.5,
+             "test_width_max"                    :   1.0,
+             "test_vel_cen_min"                  :   -2.5,
+             "test_vel_cen_max"                  :   2.5,
+             "test_plot_tag"                     :   0,
+             "data_in_file_name"                 :  "input.fits"}
 
 
 	### Open the file and read through, ignoring comments.
@@ -1312,28 +1062,40 @@ def ReadParameters(param_file):
 	print( "############################################")
 	print( "")
 	print( "############# Important three ##############")
+	print( "Delta AIC limit                 = ", param["delta_AIC_limit"])
 	print( "Smoothing length                = ", param["smoothing_length"])
-	print( "Reduced Chi_sqaure limit        = ", param["chi_limit"])
 	print( "Signal to noise ratio           = ", param["signal_to_noise_ratio"])
+	print( " ")
+
+	print( "############# Input/Output names ###########")
+	print( "Input Fits file name            = ", param["data_in_file_name"])
+	print( "Output file base name           = ", param["output_base"])
+	print( " ")
+
+	print( "######## Spectral fitting parameters #######")
+	print( "Maximum number of peaks allowed = ", param["max_peaks"])
+	print( "Maximum number of iterations    = ", param["max_iterations"])
+	print( "Minimum number of channels      = ", param["min_velocity_channels"])
+	print( "Minimum component width         = ", param["min_width_value"])
+	print( "Maximum component width         = ", param["max_width_value"])
+	print( "Mask padding value              = ", param["mask_pad"])
 	print( " ")
 
 	print( "######## Non-test noise parameters #########")
 	print( "Variable noise                  = ", param["variable_noise"])
 	if(param["variable_noise"]==0):
 		print( "Constant noise level            = ", param["noise_level"])
-	elif(param["variable_noise"]==1): 
-		print( "Number of bins used for noise   = ", param["noise_clip"])
-	print( "Integrated emission lower limit = ", param["lower_integrated_emission_limit"])
+	print( " ")
+
+	print( "######### Moment-masking parameters ########")
+	print( "Noise velocity channel width    = ", param["velocity_channel_number"])
+	print( "Upper sigma level for masking   = ", param["upper_sigma_level"])
+	print( "Lower sigma level for masking   = ", param["lower_sigma_level"])
+	print( "Top-hat filter size for masking = ", param["mask_filter_size"])
 	print( " ")
 
 	print( "################## Flags ###################")
-	print( "Check overlap                   = ", param["check_overlap"])
 	print( "Debug switch                    = ", param["debug"])
-	print( " ")
-
-	print( "############# Fits file fitting ############")
-	print( "Input Fits file name            = ", param["in_file_name"])
-	print( "Output name base                = ", param["out_file_base"])
 	print( " ")
 
 	print( "######### Parameters for test runs #########")
@@ -1360,61 +1122,64 @@ def ReadParameters(param_file):
 
 ##### Function which fits a whole fits cube if the fits cube has all the right information in the header
 
-def fit_a_fits(param_file):
+def fit_a_fits(param):
 
 	### Read the parameter file and get the input fits file name
 
-	param = ReadParameters(param_file)
-	fitsfile = param["in_file_name"]
+	fitsfile = param["data_in_file_name"]
+	maskfile = param["output_base"]+"_mask.fits"
+	max_peaks = param["max_peaks"]
 	
 	### open the fits file with astropy and extract the ppv datacube
 
 	spec_fits = astropy.io.fits.open(fitsfile)
+	mask_fits = astropy.io.fits.open(maskfile)
 	ppv_data = spec_fits[0].data
+	mask_data = mask_fits[0].data
 
 	### check to make sure the datacube is 3D
 
 	if(numpy.shape(ppv_data)[0] == 1):
 		ppv_data = ppv_data[0,:,:,:]
+	if(numpy.shape(mask_data)[0] ==1):
+		mask_data = mask_data[0,:,:,:]
 
 	### Extract the required information from the fits file header to construct the velocity axis
 
-	refnv = numpy.int(spec_fits[0].header["CRPIX3"])
-	refv = numpy.double(spec_fits[0].header["CRVAL3"])
-	dv = numpy.double(spec_fits[0].header["CDELT3"])
-	nv = len(ppv_data[:,0,0])
-
-	### Construct the velocity axis 
-
-	vel = numpy.zeros(nv)
-	for ii in range(0,nv):
-		vel[ii] = refv + (ii-refnv+1)*dv
-
 	neg_dv = 0
+	vel = get_vel(spec_fits[0].header)
+	dv = vel[1] - vel[0]
+	nv = len(vel)
 
 	if(dv<0):
-
 		vel = numpy.flip(vel,axis=0)
 		ppv_data = numpy.flip(ppv_data,axis=0)
+		mask_data = numpy.flip(mask_data,axis=0)
 		dv = numpy.fabs(dv)
 		neg_dv = 1
 
 	minv = vel[0]
-	maxv = vel[nv-1]
+	maxv = vel[-1]
 
 	### Get the size of the ppv datacube and allocate the arrays for the output.
 
 	nx = len(ppv_data[0,0,:])
 	ny = len(ppv_data[0,:,0])
 
-	amp_out = numpy.zeros_like(ppv_data)
-	cen_out = numpy.zeros_like(ppv_data)
-	wid_out = numpy.zeros_like(ppv_data)
-	chi_out = numpy.zeros_like(ppv_data)
+	amp_out = numpy.zeros((max_peaks,ny,nx))
+	amp_err = numpy.zeros_like(amp_out)
+
+	cen_out = numpy.zeros((max_peaks,ny,nx))
+	cen_err = numpy.zeros_like(cen_out)
+
+	wid_out = numpy.zeros((max_peaks,ny,nx))
+	wid_err = numpy.zeros_like(wid_out)
+
+	mod_out = numpy.zeros_like(ppv_data)
+	res_out = numpy.zeros_like(ppv_data)
 
 	### Just counters
-
-	count = numpy.zeros(6)
+	count = numpy.zeros(max_peaks)
 	no_con = 0
 
 
@@ -1430,24 +1195,26 @@ def fit_a_fits(param_file):
 		for jj in range(0,nx):
 
 			### Take the spectrum from the line of sight
-
 			spec = ppv_data[:,ii,jj]
+			mask = mask_data[:,ii,jj]
 
 			### Make sure there are no nans in the spectrum
-
 			nan_check = numpy.sum(numpy.isnan(spec))
 			if(nan_check>0):
 				continue
 
 			### Fit spectrum and unpack the outputs
+			co_eff,errors,AIC =fit_single_line(vel,spec,mask,param)
+			mod_out[:,ii,jj] = multi_gauss(vel,co_eff)
 
-			co = fit_single_line(vel,spec,param)
-			co_eff = co[0]
-			rc2 = co[1]
+			if(param["variable_noise"]==1):
+				res_out[:,ii,jj] = (spec - mod_out[:,ii,jj])/numpy.std(spec[mask==0])
+			if(param["variable_noise"]==0):
+				res_out[:,ii,jj] = (spec - mod_out[:,ii,jj])/param["noise_level"]
 
 			### Check for no convergence or if no peak was detected.			
 
-			if(co_eff[0] == 0):
+			if(co_eff[0] == -1):
 				no_con = no_con + 1
 				continue
 			if(co_eff[0] < 0):
@@ -1458,17 +1225,19 @@ def fit_a_fits(param_file):
 			n = len(co_eff[::3])
 			count[n-1] = count[n-1] + 1
 
-			### Loop over the components found and store in the 4 output arrays
+			### Loop over the components found and store in the 3 output arrays
 
 			for kk in range(0,n):
 
-				index_v = int((co_eff[3*kk+1]-minv)/dv)	
+				amp_out[kk,ii,jj] = co_eff[3*kk]
+				cen_out[kk,ii,jj] = co_eff[3*kk + 1]
+				wid_out[kk,ii,jj] = co_eff[3*kk + 2]
 
-				if(index_v>=0 and index_v < nv):				
-					amp_out[index_v,ii,jj] = co_eff[3*kk]
-					cen_out[index_v,ii,jj] = co_eff[3*kk + 1]	
-					wid_out[index_v,ii,jj] = co_eff[3*kk + 2]
-					chi_out[index_v,ii,jj] = rc2
+				amp_err[kk,ii,jj] = errors[3*kk]
+				cen_err[kk,ii,jj] = errors[3*kk + 1]
+				wid_err[kk,ii,jj] = errors[3*kk + 2]
+
+
 
 
 
@@ -1480,12 +1249,13 @@ def fit_a_fits(param_file):
 	print( "#########################")
 	print( "###### Fit results ######")
 	print( "#########################")
-	print( "There are %d spectra with 1 component, %.2f %% of total fitted spectra" %(count[0], 100*numpy.float(count[0])/numpy.sum(count)))
-	print( "There are %d spectra with 2 component, %.2f %% of total fitted spectra" %(count[1], 100*numpy.float(count[1])/numpy.sum(count)))
-	print( "There are %d spectra with 3 component, %.2f %% of total fitted spectra" %(count[2], 100*numpy.float(count[2])/numpy.sum(count)))
-	print( "There are %d spectra with 4 component, %.2f %% of total fitted spectra" %(count[3], 100*numpy.float(count[3])/numpy.sum(count)))
-	print( "There are %d spectra with 5 component, %.2f %% of total fitted spectra" %(count[4], 100*numpy.float(count[4])/numpy.sum(count)))
-	print( "There are %d spectra with 6 component, %.2f %% of total fitted spectra" %(count[5], 100*numpy.float(count[5])/numpy.sum(count)))
+
+	for ii in range(0,max_peaks):
+		if(count[ii]==0):
+			continue
+		else:
+			print( "There are %d spectra with %d component, %.2f %% of total fitted spectra" %(count[ii], ii+1, 100*numpy.float(count[ii])/numpy.sum(count)))
+
 	print( " ")
 	if(no_con>0):
 		print( "There was no convergence for %d spectra" %no_con)
@@ -1493,239 +1263,299 @@ def fit_a_fits(param_file):
 
 	### Set up output. Copy the header from the input file and use that for the output files
 
-	output_base = param["out_file_base"]
+	output_base = param["output_base"]
 	hdu = astropy.io.fits.PrimaryHDU()
-	hdu.header = spec_fits[0].header
-
+	
+	### If there dv was negative we need to flip the model and residual cubes back around before outputting them
 	if(neg_dv==1):
-		amp_out = numpy.flip(amp_out,axis=0)
-		cen_out = numpy.flip(cen_out,axis=0)
-		wid_out = numpy.flip(wid_out,axis=0)
-		chi_out = numpy.flip(chi_out,axis=0)
+		mod_out = numpy.flip(mod_out,axis=0)
+		res_out = numpy.flip(res_out,axis=0)
 
-	### Output amplitudes
+	### Collect all the co-efficients and their errors into arrays
+	coeff_out = numpy.array([amp_out,cen_out,wid_out])
+	error_out = numpy.array([amp_err,cen_err,wid_err])
 
-	hdu.data = amp_out
-	outfile = "Amp_"+output_base+".fits"
-	if(os.path.isfile(outfile)):
-		os.remove(outfile)
-	hdu.writeto(outfile)
+	### Output co-efficients
 
-	### Output widths
+	hdu.data = coeff_out
+	outfile = "Coeff_"+output_base+".fits"
+	hdu.writeto(outfile,overwrite=True)
 
-	hdu.data = wid_out
-	outfile = "Width_"+output_base+".fits"
-	if(os.path.isfile(outfile)):
-		os.remove(outfile)
-	hdu.writeto(outfile)
+	### Output errors
 
-	### Output reduced chi_square
+	hdu.data = error_out
+	outfile = "Error_"+output_base+".fits"
+	hdu.writeto(outfile,overwrite=True)
 
-	hdu.data = chi_out
-	outfile = "Chi_"+output_base+".fits"
-	if(os.path.isfile(outfile)):
-		os.remove(outfile)
-	hdu.writeto(outfile)
+	### Output Model
 
-	### Output centoids
+	hdu.data = mod_out
+	hdu.header = spec_fits[0].header
+	outfile = "Model_"+output_base+".fits"
+	hdu.writeto(outfile,overwrite=True)
 
-	hdu.data = cen_out
-	outfile = "Vel_"+output_base+".fits"
-	if(os.path.isfile(outfile)):
-		os.remove(outfile)
-	hdu.writeto(outfile)
+	### Output residuals
+
+	hdu.data = res_out
+	hdu.header = spec_fits[0].header
+	outfile = "Res_"+output_base+".fits"
+	hdu.writeto(outfile,overwrite=True)
 
 	return
 
 
-##### The functions that are used for fitting. More than 6 Gaussians can be added.
+### Function to make a 3D top-hat function and convolve it with the datacube to make a smoothed cube
+def TopHat_3DFilter(Image, Filter_size):
 
-def gaussone(x, a, x0, sigma):
-    return a*numpy.exp(-(x-x0)**2/(2*sigma**2))
+	kernel = numpy.ones((Filter_size,Filter_size,Filter_size))
+	kernel = kernel / numpy.sum(kernel)
+	Final_image = convolve_fft(Image,kernel,boundary="wrap")
 
-def gausstwo(x, a, x0, sigma, a2, x02, sigma2):
-    return a*numpy.exp(-(x-x0)**2/(2*sigma**2)) + a2*numpy.exp(-(x-x02)**2/(2*sigma2**2)) 
-
-def gaussthree(x, a, x0, sigma, a2, x02, sigma2,a3,x03,sigma3):
-    return a*numpy.exp(-(x-x0)**2/(2*sigma**2)) + a2*numpy.exp(-(x-x02)**2/(2*sigma2**2))+ a3*numpy.exp(-(x-x03)**2/(2*sigma3**2))
-
-def gaussfour(x, a, x0, sigma, a2, x02, sigma2,a3,x03,sigma3,a4,x04,sigma4):
-    return a*numpy.exp(-(x-x0)**2/(2*sigma**2)) + a2*numpy.exp(-(x-x02)**2/(2*sigma2**2))+ a3*numpy.exp(-(x-x03)**2/(2*sigma3**2)) + a4*numpy.exp(-(x-x04)**2/(2*sigma4**2))
-
-def gaussfive(x, a, x0, sigma, a2, x02, sigma2,a3,x03,sigma3,a4,x04,sigma4,a5,x05,sigma5):
-    return a*numpy.exp(-(x-x0)**2/(2*sigma**2)) + a2*numpy.exp(-(x-x02)**2/(2*sigma2**2))+ a3*numpy.exp(-(x-x03)**2/(2*sigma3**2)) + a4*numpy.exp(-(x-x04)**2/(2*sigma4**2)) + a5*numpy.exp(-(x-x05)**2/(2*sigma5**2))
-
-def gausssix(x, a, x0, sigma, a2, x02, sigma2,a3,x03,sigma3,a4,x04,sigma4,a5,x05,sigma5,a6,x06,sigma6):
-    return a*numpy.exp(-(x-x0)**2/(2*sigma**2)) + a2*numpy.exp(-(x-x02)**2/(2*sigma2**2))+ a3*numpy.exp(-(x-x03)**2/(2*sigma3**2)) + a4*numpy.exp(-(x-x04)**2/(2*sigma4**2)) + a5*numpy.exp(-(x-x05)**2/(2*sigma5**2)) +a6*numpy.exp(-(x-x06)**2/(2*sigma6**2))
+	return Final_image
 
 
 
+### Take the smoothed cube and determine the mask needed for moment-masking
+def make_mask(image,data,param):
+
+	### unpack needed parameters and open fits file
+	fitsfile = param["data_in_file_name"]
+	maskfile = param["output_base"]+"_mask.fits"
+	nvel = param["velocity_channel_number"]
+	upper = param["upper_sigma_level"]
+	lower = param["lower_sigma_level"]
+	spec_fits = astropy.io.fits.open(fitsfile)
+
+	### Determine the noise level on a pixel-by-pixel basis using the number of velocity channels (nvel) specified in the parameter file
+	noise = numpy.zeros_like(image)
+	image[numpy.isnan(image)] = 0
+
+	for ii in range(0,image.shape[1]):
+		for jj in range(0,image.shape[2]):
+
+			if(nvel>0):
+				noise[:,ii,jj] = numpy.nanstd(image[:nvel,ii,jj])
+			if(nvel<0):
+				noise[:,ii,jj] = numpy.nanstd(image[nvel:,ii,jj])
 
 
+	# Set up the mask 3D array and set everything above the upper limit to 1
+	mask = numpy.zeros_like(image)
+	mask[image>upper*noise] = 1
 
-### Checking functions.
+	# Initialise counters etc.
+	change = 1
+	tot_num = 0
+	old_tot_num = numpy.sum(mask)
+	counter = 1
 
-### Check for the low amplitude and very thin gaussian fits. These typically appear when there is one too many peaks detected.
-def check_tiny_and_thin(co_eff,dv,n,noise):
-
-	tt=0
-
-	amp = co_eff[::3]
-	wid = co_eff[2::3]
-
-	for ii in range(0,len(amp)):
-		
-		if(amp[ii]<1.01*n*noise and wid[ii]<1.01*dv):
-			tt=1
-
-	return tt
-
-### Check if two components lie within one velocity bin of each other. This check can be turned on or off.
-def check_overlap(co_eff,dv):
-
-	overlap = 0
-
-	v_cent = co_eff[1::3]
-	for kk in range(0,len(v_cent)-1):
-		for ll in range(kk+1,len(v_cent)):
-			if(v_cent[ll] < v_cent[kk] + dv and v_cent[ll] > v_cent[kk] - dv):
-				overlap = 1
-
-	return overlap
+	print( "##########################")
+	print( "#### Masking progress ####")
+	print( "##########################")
 
 
+	### While the number of voxels in the mask keeps changing keep iterating
+	while(change==1):
+
+		### Find all voxels which are above the lower limit and are not currently masked
+		index = numpy.where((mask==0)*(image > lower*noise))
+
+		ix = index[0]
+		iy = index[1]
+		iz = index[2]
+
+		nx = len(ix)
+
+		### Loop over these candidate voxels and check if one of their 6 neighbours is currently masked 
+		for aa in range(0,nx):
+
+			ii = ix[aa]
+			jj = iy[aa]
+			kk = iz[aa]
+
+			if(ii==0 or jj==0 or kk==0 or ii==mask.shape[0]-1 or jj==mask.shape[1]-1 or kk==mask.shape[2]-1 ):
+				continue
+
+			neighbour = 0
+			neighbour = neighbour + mask[ii-1,jj,kk]
+			neighbour = neighbour + mask[ii+1,jj,kk]
+
+			neighbour = neighbour + mask[ii,jj-1,kk]
+			neighbour = neighbour + mask[ii,jj+1,kk]
+
+			neighbour = neighbour + mask[ii,jj,kk-1]
+			neighbour = neighbour + mask[ii,jj,kk+1]
+
+			## If a neighbour is masked then mask this voxel
+			if(neighbour>0):
+
+				mask[ii,jj,kk]=1
+
+		tot_num = numpy.sum(mask)
+
+		if(tot_num == old_tot_num):
+			change = 0
+		else:
+			print("Iteration ", counter, " the old number of mask pixels was ", old_tot_num, ", now it is ", tot_num)
+			old_tot_num = tot_num
+			counter=counter+1
+
+	print("")
+	print("")
+	print("")
+
+	### Ensure that the mask is 0 if the unsmoothed data is NaN or below zero for this voxel
+	mask[numpy.isnan(data)] = 0
+	mask[data<0] = 0
+
+	### Output the mask to a fits file
+	hdu = astropy.io.fits.PrimaryHDU()
+	hdu.header = spec_fits[0].header
+	hdu.header["BSCALE"]  =  1                                        
+	hdu.header["BZERO"]   =  0
+	hdu.data = mask
+	hdu.writeto(maskfile,overwrite=True)
+
+	return mask
+
+def weighted_avg_and_std(values, weights):
+    """
+    Return the weighted average and standard deviation.
+
+    values, weights -- Numpy ndarrays with the same shape.
+    """
+    av = numpy.average(values, weights=weights)
+    # Fast and numerically precise:
+    variance = numpy.average((values-av)**2, weights=weights)
+    return (av, numpy.sqrt(variance))
 
 
+### A function to calculate the moment internally
+def make_moments_int(cube,mask,param):
 
-
-
-
-
-
-##### Wrappers for the fits for different number of peaks
-
-def fit1(vel,spec,guess,bound,noise):
-
-	try:
-		co_eff, var_matrix = curve_fit(gaussone,vel,spec,p0=guess,method="trf",bounds=bound)
-
-		chi_sq = sum((spec-gaussone(vel,*co_eff))**2) / noise**2
-		r_chi_sq = chi_sq / (len(spec) - 3)
-
-		fit = gaussone(vel,*co_eff)
-		res = spec-fit
-		converged = 1
-
-	except RuntimeError:
-		converged = 0
-		r_chi_sq = 0
-		res = 0
-		co_eff = 0
-		var_matrix = 0
-
-	return r_chi_sq, res, co_eff, var_matrix, converged
-
-def fit2(vel,spec,guess,bound,noise):
+	#Unpack parameters and open header
+	moms_out = param["output_base"]
+	fitsfile = param["data_in_file_name"]
+	data_head = astropy.io.fits.getheader(fitsfile)
 	
-	try:
-		co_eff, var_matrix = curve_fit(gausstwo,vel,spec,p0=guess,method="trf",bounds=bound)
+	#Construct velocity array from fits file header and check for negative dv
+	vel = get_vel(data_head)
+	dv = vel[1] - vel[0]
+	if(dv<0):
+		dv = dv*-1
 
-		chi_sq = sum((spec-gausstwo(vel,*co_eff))**2) / noise**2
-		r_chi_sq = chi_sq / (len(spec) - 6)
+	#Calculate moment zero from the sum along the velocity axis
+	mom0 = numpy.sum(mask*cube , axis=0) * dv
 
-		fit = gausstwo(vel,*co_eff)
-		res = spec-fit
-		converged = 1
+	#Loop over all the pixel and determine the moment 1 and 2, as well as noise
+	mom1 = numpy.zeros_like(mom0)
+	mom2 = numpy.zeros_like(mom0)
+	noise = numpy.zeros_like(mom0)
+	for ii in range(0,mom1.shape[0]):
+		for jj in range(0,mom1.shape[1]):
 
-	except RuntimeError:
-		converged = 0
-		r_chi_sq = 0
-		res = 0
-		co_eff = 0
-		var_matrix = 0
+			## Determine noise first using only noisy channels, i.e. mask==0
+			q = (mask[:,ii,jj]==0)
+			noise_spec = cube[q,ii,jj]
+			noise[ii,jj] = numpy.nanstd(noise_spec)
 
-	return r_chi_sq, res, co_eff, var_matrix, converged
+			## Determine moments from only emission channels, i.e. mask==1
+			q = (mask[:,ii,jj]==1)
+			v = vel[q]
+			c = cube[q,ii,jj]
+			# Ensure that there are at least 3 velocity channels with emission so that an actual moment 2 can be determined.
+			if(numpy.sum(q)<3 or numpy.sum(c)<=0):
+				continue
+			mom1[ii,jj], mom2[ii,jj] = weighted_avg_and_std(v,c)
 
-def fit3(vel,spec,guess,bound,noise):
 
-	try:
-		co_eff, var_matrix = curve_fit(gaussthree,vel,spec,p0=guess,method="trf",bounds=bound)
+	### Set up the header for the moment maps
+	hdu = astropy.io.fits.PrimaryHDU()
+	hdu.header["NAXIS"] = 2
 
-		chi_sq = sum((spec-gaussthree(vel,*co_eff))**2) / noise**2
-		r_chi_sq = chi_sq / (len(spec) - 9)
+	keywords = ["NAXIS1","NAXIS2","CTYPE1","CRVAL1","CDELT1","CRPIX1","CUNIT1","CTYPE2","CRVAL2","CDELT2","CRPIX2","CUNIT2","RADESYS","EQUINOX","EPOCH"]
 
-		fit = gaussthree(vel,*co_eff)
-		res = spec-fit
-		converged = 1
+	for ii in range(0,len(keywords)):
+		try:
+			hdu.header[keywords[ii]] = data_head[keywords[ii]]
+		except KeyError:
+			print("No %s keyword in the header" %keywords[ii])
 
-	except RuntimeError:
-		converged = 0
-		r_chi_sq = 0
-		res = 0
-		co_eff = 0
-		var_matrix = 0
+	print(" ")
 
-	return r_chi_sq, res, co_eff, var_matrix, converged
+	### Save the moment maps
+	hdu.data = mom0
+	hdu.writeto(moms_out+"_mom0.fits",overwrite=True)
 
-def fit4(vel,spec,guess,bound,noise):
+	hdu.data = mom1
+	hdu.writeto(moms_out+"_mom1.fits",overwrite=True)
 
-	try:
-		co_eff, var_matrix = curve_fit(gaussfour,vel,spec,p0=guess,method="trf",bounds=bound)
+	hdu.data = mom2
+	hdu.writeto(moms_out+"_mom2.fits",overwrite=True)
 
-		chi_sq = sum((spec-gaussfour(vel,*co_eff))**2) / noise**2
-		r_chi_sq = chi_sq / (len(spec) - 12)
+	hdu.data = noise
+	hdu.writeto(moms_out+"_noise.fits",overwrite=True)
 
-		fit = gaussfour(vel,*co_eff)
-		res = spec-fit
-		converged=1
+	return 
 
-	except RuntimeError:
-		converged = 0
-		r_chi_sq = 0
-		res = 0
-		co_eff = 0
-		var_matrix = 0
 
-	return r_chi_sq, res, co_eff, var_matrix, converged
+### Constructs the velocity array assuming that velocity is the third axis in the fits cube
+def get_vel(head):
 
-def fit5(vel,spec,guess,bound,noise):
+	### If the header data is stored as frequency then convert to velocity [in km/s]
+	if(head["CTYPE3"][0] == "F"):
 
-	try:
-		co_eff, var_matrix = curve_fit(gaussfive,vel,spec,p0=guess,method="trf",bounds=bound)
+		df = head['CDELT3']
+		nf = head["CRPIX3"] 
+		fr = head["CRVAL3"]
 
-		chi_sq = sum((spec-gaussfive(vel,*co_eff))**2) / noise**2
-		r_chi_sq = chi_sq / (len(spec) - 15)
+		ff = numpy.zeros(head["NAXIS3"])
+		for ii in range(0,len(ff)):
+			ff[ii] = fr + (ii-nf+1)*df
 
-		fit = gaussfive(vel,*co_eff)
-		res = spec-fit
-		converged = 1
+		rest = head["RESTFRQ"]
 
-	except RuntimeError:
-		converged = 0
-		r_chi_sq = 0
-		res = 0
-		co_eff = 0
-		var_matrix = 0
+		vel = (rest-ff) / rest * 299792.458 
+		return vel
 
-	return r_chi_sq, res, co_eff, var_matrix, converged
+	elif(head["CTYPE3"][0] == "V"):
 
-def fit6(vel,spec,guess,bound,noise):
+		refnv = head["CRPIX3"]
+		refv = head["CRVAL3"]
+		dv = head["CDELT3"]
+		### Construct the velocity axis 
 
-	try:
-		co_eff, var_matrix = curve_fit(gausssix,vel,spec,p0=guess,method="trf",bounds=bound)
+		vel = numpy.zeros(head["NAXIS3"])
+		for ii in range(0,len(vel)):
+			vel[ii] = refv + (ii-refnv+1)*dv
 
-		chi_sq = sum((spec-gausssix(vel,*co_eff))**2) / noise**2
-		r_chi_sq = chi_sq / (len(spec) - 18)
+		return vel
 
-		fit = gausssix(vel,*co_eff)
-		res = spec-fit
-		converged = 1
+	else:
 
-	except RuntimeError:
-		converged = 0
-		r_chi_sq = 0
-		res = 0
-		co_eff = 0
-		var_matrix = 0
+		print("The CTYPE3 variable in the fitsfile header does not start with F for frequency or V for velocity")
+		return
 
-	return r_chi_sq, res, co_eff, var_matrix, converged
+
+### Function to be called externally to calculate the moments
+def make_moments(param):
+
+	## Unpack parameters and open data file
+	fitsfile = param["data_in_file_name"]
+	Filter_size = param["mask_filter_size"]
+	data_head = astropy.io.fits.getheader(fitsfile)
+	data = astropy.io.fits.getdata(fitsfile)
+	
+	# If the data has a 4 dimension, turn it into 3D
+	if(numpy.shape(data)[0] == 1):
+		data = data[0,:,:,:]
+
+	# Smooth the data, make a mask, and then make the moments
+	data_copy = numpy.copy(data)
+	data_copy[numpy.isnan(data_copy)] = 0
+	data_s = TopHat_3DFilter(data_copy,Filter_size)
+	mask = make_mask(data_s,data,param)
+	make_moments_int(data,mask,param)
+
+
+

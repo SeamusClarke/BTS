@@ -1,19 +1,14 @@
 #### A script to show how to use each of the 4 functions in BTS.
-
 import BTS
 import numpy as np
 
-##### First run the single Gaussian test
 
-BTS.single_gaussian_test("./Example_files/SingleGaussianTest.param")
+#### Example to show how to fit a single spectrum
 
-##### Next run the multiple Gaussian test
+# Read in the relevant parameter file
+param = BTS.read_parameters("./Fit_single_line.param")
 
-BTS.multi_gaussian_test("./Example_files/MultipleGaussianTest.param")
-
-##### Fit a single test spectrum
-
-# Construct a noisy spectrum
+# Construct a noisy spectrum for the test
 velocity = np.linspace(-2,2,100)
 
 amplitude = 1.0
@@ -24,21 +19,41 @@ noise_level = 0.1
 np.random.seed(1)
 spectrum = amplitude*np.exp(-(velocity-centroid)**2/(2*sigma**2))
 spectrum = spectrum + np.random.normal(loc=0.0,scale=noise_level,size=100)
+mask = np.zeros_like(spectrum)
+mask[spectrum>0.4] = 1
 
-# Read the parameters
-param = BTS.ReadParameters("./Example_files/SingleSpectrumFit.param")
-
-# Fit the spectrum
-co_eff,r_chi = BTS.fit_single_line(velocity,spectrum,param)
-
-# Output results
-print "The input amplitude, centroid and width were: %.2f, %.2f, %.2f" %(amplitude, centroid, sigma)
-print "The output amplitude, centroid and width are: %.2f, %.2f, %.2f" %(co_eff[0], co_eff[1],co_eff[2])
-
-##### Fit the test fits cube
-
-# This should produce 4 fits files with the ampltiudes, centroids, widths and reduced chi_squareds. All spectra should have 1 component.
-
-BTS.fit_a_fits("./Example_files/FitsFileFit.param")
+# Fit the noisy spectrum and report the co-efficients and their errors
+co_eff, errors, AIC = BTS.fit_single_line(velocity,spectrum,mask,param)
+print("The fitted amplitude = %.3lf p/m %.3lf, and the actual ampltiude = %.3lf" %(co_eff[0],errors[0],amplitude))
+print("The fitted centroid  = %.3lf p/m %.3lf, and the actual centroid  = %.3lf" %(co_eff[1],errors[1],centroid))
+print("The fitted width     = %.3lf p/m %.3lf, and the actual width     = %.3lf" %(co_eff[2],errors[2],sigma))
 
 
+#### Example to show how to make moment maps from a fits cube and then fit the entire cube
+
+# Read in the relevant parameter file
+param = BTS.read_parameters("./Fit_cube.param")
+
+# Run the function to make the moments using the moment-masking technique
+BTS.make_moments(param)
+
+# Using the generated mask, fit the entire datacube
+BTS.fit_a_fits(param)
+
+
+#### Example to show how to run the single Gaussian test, checking the typical errors on the fitting parameters
+
+# Read in the relevant parameter file
+param = BTS.read_parameters("./Single_gaussian_test.param")
+
+# Run the test which reports the errors on the amplitude, centroid and width
+BTS.single_gaussian_test(param)
+
+
+#### Example to show how to run the multiple Gaussian test, checking how accurate the number of velocity components is
+
+# Read in the relevant parameter file
+param = BTS.read_parameters("./Multi_gaussian_test.param")
+
+# Run the test which reports the number of spectrum fit with the incorrect number of components
+BTS.multi_gaussian_test(param)

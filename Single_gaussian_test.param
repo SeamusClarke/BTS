@@ -1,0 +1,51 @@
+### Important three parameters
+
+delta_AIC_limit                 :   10.0          ### The difference in the corrected AIC needed for a fit to be considered preferred
+smoothing_length                :   3.0           ### The smoothing length used to smooth the spectrum before the determination of the number of peaks
+signal_to_noise_ratio           :   5             ### Signal to noise ratio to determine if a component is significant enough to fit
+
+### Input/Output names
+data_in_file_name               : ./input.fits    ### The name of the fits file one wishes to fit
+output_base                     : output          ### The name base for the moment maps, i.e. output_mom0.fits, output_mom1.fits
+
+### Spectral fitting parameters
+
+max_peaks                       :   4             ### Maximum number of Gaussian components allowed to be considered in the fitting
+max_iterations                  :   5             ### Maximum number of iterations allowed in the fitting process
+min_velocity_channels           :   1             ### Minimum number of velocity channels with emission needed for a spectrum to be fitted
+min_width_value                 :  0.08           ### Minimum value that the width of any component may have (ensure the value is in the same unit as the header)
+max_width_value                 :  1.0            ### Maximum value that the width of any component may have (ensure the value is in the same unit as the header)
+mask_pad                        :   3             ### Number of mask channels padding on either side of emission
+
+### Noise level parameters. Not needed for test runs
+
+variable_noise                  :   0             ### A flag which determines if the noise level is constant for all spectra fitted, or if it is estimated from the spectrum
+noise_level                     :   0.1           ### If variable_noise = 0 then we use a constant noise level for all spectra and this is set by noise_level
+
+### Moment-masking parameters
+
+velocity_channel_number         :   70            ### The number of velocity channels on either the left-hand side (number>0) or the right-hand side (number<0) of the spectrum used to calculate the noise during masking
+upper_sigma_level               :   8             ### The upper signal to noise value used for the moments masking technique
+lower_sigma_level               :   4             ### The lower signal to noise value used for the moments masking technique
+mask_filter_size                :   3             ### The size of the box-car filter used to make the moment mask
+
+### Flags
+
+debug                           :   0             ### A flag to turn on the debug mode, this produces a lot of screen output and so should be turned off for normal runs
+
+
+
+
+### Parameters used when one uses one of the test functions. Not used in normal runs.
+
+test_spec_min                   :   -3.0          ### Minimum velocity of the spectra
+test_spec_max                   :   3.0           ### Maximum velocity of the spectra
+test_spec_num                   :   75            ### Number of velocity channels
+test_noise                      :   0.1           ### The level of noise added to the test spectra
+test_amplitude_min              :   0.6           ### The minimum amplitude of the components in the test spectra
+test_amplitude_max              :   5.6           ### The maximum amplitude of the components in the test spectra
+test_width_min                  :   0.25          ### The minimum width of the components in the test spectra
+test_width_max                  :   0.5           ### The maximum width of the components in the test spectra
+test_vel_cen_min                :   -2.5          ### The minimum velocity centroid of the components in the test spectra
+test_vel_cen_max                :   2.5           ### The maximum velocity centroid of the components in the test spectra
+test_plot_tag                   :   0             ### A flag to turn on or off the plotting of the errors and reduced chi_squared in the single Gaussian test function
