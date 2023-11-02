@@ -52,6 +52,8 @@ From testing, the size of the top-hat filter should be kept relatively small, wi
 
 Using the above technique, the **make_moments** function produces the moment 0, 1 and 2 maps and outputs them as 2D arrays stored in fits files, using the header information in the 3D PPV datacube provided, a 2D noise map stored as a fits file, as well as the 3D mask generated during the process stored as a fits file in the same format as the PPV datacube. Note that when calculating a moment 1 or 2 value for a pixel, **make_moments** requires that there are at least 4 channels of emission in the spectrum; thus, there may exist pixels where a moment 0 is calculated which do not have a corresponding moment 1 or 2 due to very low signal-to-noise.
 
+Note that there is also a limited velocity range mode for the moment calculations, i.e. if one wishes to calculate moment 0, 1 and 2 from a cube over only a certain velocity range. This is done by turning the parameter flag **use_velocity_range** to 1 and then specifying the desired velocity range with the parameters **min_velocity_range** and **max_velocity_range**. One must ensure that the specified velocities are in the same unit as the velocity axis information in the fits file header. If the header uses frequency instead of velocity, BTS will automatically use km/s and use the header RESTFRQ keyword to make the conversion between frequency and velocity.  
+
 ## Multi-component fitting methodology 
 
 The BTS routine does not assume the number of components in a spectrum _a priori_, but uses the first, second and third derivatives to determine the number and positions of the velocity components. A least-squared fitting routine is then used to determine the best fit with that number of components, checking for over-fitting.
@@ -126,6 +128,9 @@ These parameters are related to the moment-masking technique to generate moment 
 * **upper_sigma_level** - The upper threshold used in moment-masking, T<sub>C</sub>, expressed as a multiple of noise, so upper_sigma_level=8 means T<sub>C</sub> = 8&sigma; (default 8).
 * **lower_sigma_level** - The lower threshold used in moment-masking, T<sub>L</sub>, expressed as a multiple of noise, so lower_sigma_level=4 means T<sub>L</sub> = 4&sigma; (default 4).
 * **mask_filter_size** - The size of the 3D top-hat filter used when smoothing before making the mask (default 3).
+* **use_velocity_range** - A flag to determine if the moments will be calculated over only a limited velocity range; set to 1 to use and set to 0 to not use (default 0).
+* **min_velocity_range** - The minimum velocity in the range over which the moments will be calculated if the limited velocity range mode is activated (default -10).
+* **max_velocity_range** - The maximum velocity in the range over which the moments will be calculated if the limited velocity range mode is activated (default 10).
 
 #### Flags
 
