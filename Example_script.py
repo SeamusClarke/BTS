@@ -57,3 +57,4 @@ param = BTS.read_parameters("./Multi_gaussian_test.param")
 
 # Run the test which reports the number of spectrum fit with the incorrect number of components
 BTS.multi_gaussian_test(param)
+

@@ -28,6 +28,9 @@ velocity_channel_number         :   70            ### The number of velocity cha
 upper_sigma_level               :   8             ### The upper signal to noise value used for the moments masking technique
 lower_sigma_level               :   4             ### The lower signal to noise value used for the moments masking technique
 mask_filter_size                :   3             ### The size of the box-car filter used to make the moment mask
+use_velocity_range              :   0             ### A flag which determines if moments are only calculated over a certain velocity range
+min_velocity_range              :   200           ### The minimum velocity for the velocity range moments are calculated over, if used
+max_velocity_range              :   300            ### The maximum velocity for the velocity range moments are calculated over, if used
 
 ### Flags
 

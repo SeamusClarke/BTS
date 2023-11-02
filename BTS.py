@@ -87,7 +87,7 @@ def fit_single_line(vel,x,mask,params):
 	if(sum(switch)<1):
 		guess = single_gauss_guess(vel,spec,mask)
 		### Maybe a bad pixel/too few emission channels even after padding so return non-convergence tag
-		if(numpy.isnan(guess[2])):
+		if(numpy.isnan(guess[2]) or guess[0]<n*noise):
 			return [[-3,0,0],[0,0,0],1e9]
 		### If guess is ok then proceed
 		n_peaks = 1
@@ -244,7 +244,7 @@ def fit_single_line(vel,x,mask,params):
 
 		guess = single_gauss_guess(vel,spec,mask)
 		### Maybe a bad pixel/too few emission channels even after padding so return non-convergence tag
-		if(numpy.isnan(guess[2])):
+		if(numpy.isnan(guess[2]) or guess[0]<n*noise):
 			return [[-3,0,0],[0,0,0],1e9]
 
 		### Else proceed
@@ -970,6 +970,9 @@ def read_parameters(param_file):
 	               "upper_sigma_level"                 :   "float",
 	               "lower_sigma_level"                 :   "float",
 	               "mask_filter_size"                  :   "int",
+	               "use_velocity_range"                :   "int",
+	               "min_velocity_range"                :   "float",
+	               "max_velocity_range"                :   "float",
                    "test_number"                       :   "int",
                    "test_spec_min"                     :   "float",
                    "test_spec_max"                     :   "float",
@@ -1001,6 +1004,9 @@ def read_parameters(param_file):
 	         "upper_sigma_level"                 :   8,
 	         "lower_sigma_level"                 :   4,
 	         "mask_filter_size"                  :   3,
+	         "use_velocity_range"                :   0,
+	         "min_velocity_range"                :   -10,
+	         "max_velocity_range"                :   10,
              "test_number"                       :   1000,
              "test_spec_min"                     :   -3.0,
              "test_spec_max"                     :   3.0,
@@ -1092,6 +1098,10 @@ def read_parameters(param_file):
 	print( "Upper sigma level for masking   = ", param["upper_sigma_level"])
 	print( "Lower sigma level for masking   = ", param["lower_sigma_level"])
 	print( "Top-hat filter size for masking = ", param["mask_filter_size"])
+	print( "Limited velocity range flag     = ", param["use_velocity_range"])
+	if(param["use_velocity_range"]==1):
+		print( "Minimum velocity of the range   = ", param["min_velocity_range"])
+		print( "Maximum velocity of the range   = ", param["max_velocity_range"])
 	print( " ")
 
 	print( "################## Flags ###################")
@@ -1436,6 +1446,7 @@ def make_moments_int(cube,mask,param):
 	#Unpack parameters and open header
 	moms_out = param["output_base"]
 	fitsfile = param["data_in_file_name"]
+	vel_range_flag = param["use_velocity_range"]
 	data_head = astropy.io.fits.getheader(fitsfile)
 	
 	#Construct velocity array from fits file header and check for negative dv
@@ -1443,6 +1454,18 @@ def make_moments_int(cube,mask,param):
 	dv = vel[1] - vel[0]
 	if(dv<0):
 		dv = dv*-1
+
+	if(vel_range_flag==1):
+		vel_min_range = param["min_velocity_range"]
+		vel_max_range = param["max_velocity_range"]
+
+		vv = numpy.array([vel]*cube.shape[1])
+		vv = numpy.array([vv]*cube.shape[2])
+		vv = vv.T
+
+		mask[vv<vel_min_range] = 0
+		mask[vv>vel_max_range] = 0
+
 
 	#Calculate moment zero from the sum along the velocity axis
 	mom0 = numpy.sum(mask*cube , axis=0) * dv
