@@ -15,12 +15,11 @@ BTS requires 4 common libraries to be installed:
 * Matplotlib,
 * Scipy, at least version 0.17. 
 
-To allow the import of the BTS module from any directory use the export command to modified the PYTHONPATH variable. This is done by adding the line
+To allow the import of the BTS module from any directory, install using pip:
 
 ```
-export PYTHONPATH=$PYTHONPATH:"Path to BTS' download location"
+pip2 install git+https://github.com/BillyGTCarlyle/BTS.git
 ```
-to the .bashrc file in the home directory.
 
 ## How to use the code
 
