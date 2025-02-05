@@ -1319,7 +1319,7 @@ def TopHat_3DFilter(Image, Filter_size):
 
 	kernel = numpy.ones((Filter_size,Filter_size,Filter_size))
 	kernel = kernel / numpy.sum(kernel)
-	Final_image = convolve_fft(Image,kernel,boundary="wrap")
+	Final_image = convolve_fft(Image,kernel,boundary="wrap",allow_huge=True)
 
 	return Final_image
 
@@ -1474,6 +1474,7 @@ def make_moments_int(cube,mask,param):
 	mom1 = numpy.zeros_like(mom0)
 	mom2 = numpy.zeros_like(mom0)
 	noise = numpy.zeros_like(mom0)
+
 	for ii in range(0,mom1.shape[0]):
 		for jj in range(0,mom1.shape[1]):
 
@@ -1491,6 +1492,9 @@ def make_moments_int(cube,mask,param):
 				continue
 			mom1[ii,jj], mom2[ii,jj] = weighted_avg_and_std(v,c)
 
+
+	## Calculate the uncertainity on moment 0
+	mom0_noise = noise * dv * numpy.sqrt(numpy.sum(mask,axis=0))
 
 	### Set up the header for the moment maps
 	hdu = astropy.io.fits.PrimaryHDU()
@@ -1518,6 +1522,9 @@ def make_moments_int(cube,mask,param):
 
 	hdu.data = noise
 	hdu.writeto(moms_out+"_noise.fits",overwrite=True)
+
+	hdu.data = mom0_noise
+	hdu.writeto(moms_out+"_mom0_uncert.fits",overwrite=True)
 
 	return 
 
